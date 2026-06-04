@@ -1,4 +1,51 @@
 from ovbook.split import split_into_chunks, score_heading, Chunk
+from ovbook.split import group_chunks_by_chapter, ChapterGroup
+from ovbook.split import filter_toc_chunks, filter_low_score_chunks
+
+
+def test_group_by_chapter_collects_subsections():
+    """Subsections (H3) are grouped under their parent chapter."""
+    chunks = [
+        Chunk(heading="Chapter 1", content="Intro text", level=2,
+              chapter_no=1, chapter_title="Chapter 1", score=10.0),
+        Chunk(heading="1.1 Background", content="Background text", level=3,
+              chapter_no=1, section_no=1, score=5.0),
+        Chunk(heading="1.2 Problem", content="Problem text", level=3,
+              chapter_no=1, section_no=2),
+        Chunk(heading="Chapter 2", content="Second chapter", level=2,
+              chapter_no=2, chapter_title="Chapter 2", score=10.0),
+        Chunk(heading="2.1 Method", content="Method text", level=3,
+              chapter_no=2, section_no=1),
+    ]
+    groups = group_chunks_by_chapter(chunks, min_chapter_score=6.0)
+    assert len(groups) == 2
+    assert len(groups[0].chunks) == 3
+    assert groups[0].chunks[0].heading == "Chapter 1"
+    assert len(groups[1].chunks) == 2
+    assert groups[1].chunks[1].heading == "2.1 Method"
+
+
+def test_filter_toc_chunks_removes_toc_entries():
+    """Chunks with looks_like_toc_entry are removed."""
+    chunks = [
+        Chunk(heading="Chapter 1: Intro...........1", content="...", level=2, looks_like_toc_entry=True),
+        Chunk(heading="1.1 Background.............5", content="...", level=3, looks_like_toc_entry=True),
+        Chunk(heading="Chapter 1", content="Real content", level=2, looks_like_toc_entry=False),
+    ]
+    filtered = filter_toc_chunks(chunks)
+    assert len(filtered) == 1
+    assert filtered[0].heading == "Chapter 1"
+
+
+def test_filter_low_score_removes_noise():
+    """Chunks with score <= threshold are removed."""
+    chunks = [
+        Chunk(heading="x", content="", level=2, score=-2.0),
+        Chunk(heading="Chapter 2", content="Real", level=2, score=10.0),
+    ]
+    filtered = filter_low_score_chunks(chunks, min_score=0.0)
+    assert len(filtered) == 1
+    assert filtered[0].heading == "Chapter 2"
 
 
 def test_score_heading_scores_correctly():

@@ -267,3 +267,49 @@ def filter_content(chunks: list[Chunk]) -> list[Chunk]:
             break
 
     return chunks[start:end]
+
+
+@dataclass
+class ChapterGroup:
+    """A chapter with its subsections, ready for depth-guarded writing."""
+
+    chapter_no: int
+    chapter_title: str
+    chunks: list[Chunk]
+
+
+def group_chunks_by_chapter(
+    chunks: list[Chunk],
+    min_chapter_score: float = 5.0,
+) -> list[ChapterGroup]:
+    """Group chunks into chapters.
+
+    H2 chunks with score >= min_chapter_score start a new chapter.
+    H3 chunks and low-score chunks get grouped under the nearest preceding chapter.
+    Returns list of ChapterGroups. Chunks before the first chapter are dropped.
+    """
+    groups: list[ChapterGroup] = []
+    current: ChapterGroup | None = None
+
+    for chunk in chunks:
+        if chunk.level == 2 and chunk.score >= min_chapter_score:
+            current = ChapterGroup(
+                chapter_no=chunk.chapter_no,
+                chapter_title=chunk.heading,
+                chunks=[chunk],
+            )
+            groups.append(current)
+        elif current is not None:
+            current.chunks.append(chunk)
+
+    return groups
+
+
+def filter_toc_chunks(chunks: list[Chunk]) -> list[Chunk]:
+    """Remove chunks that look like TOC entries."""
+    return [c for c in chunks if not c.looks_like_toc_entry]
+
+
+def filter_low_score_chunks(chunks: list[Chunk], min_score: float = 0.0) -> list[Chunk]:
+    """Remove chunks with score at or below threshold (noise/artifacts)."""
+    return [c for c in chunks if c.score > min_score]

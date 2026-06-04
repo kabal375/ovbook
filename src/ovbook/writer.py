@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from ovbook.frontmatter import make_book_frontmatter, make_chunk_frontmatter
-from ovbook.split import Chunk
+from ovbook.split import Chunk, ChapterGroup
 
 
 def _slugify(text: str) -> str:
@@ -176,3 +176,61 @@ def _write_with_parts(target: Path, chunks: list[Chunk]) -> None:
                     chunk_path = chapter_dir / file_name
                     chunk_path.parent.mkdir(parents=True, exist_ok=True)
                     _write_chunk(chunk_path, chunk)
+
+
+def _chunk_to_markdown(chunk: Chunk, level_prefix: str = "##") -> str:
+    """Render a chunk as markdown with heading and body.
+
+    Subsections (H3+) get level_prefix, first chunk in chapter gets '#'.
+    """
+    parts = [f"{level_prefix} {chunk.heading}", "", chunk.content]
+    return "\n".join(parts).strip()
+
+
+def make_slug(text: str) -> str:
+    """Create a filesystem-safe slug from text, falling back to untitled."""
+    slug = _slugify(text)
+    return slug if slug else "untitled"
+
+
+def write_chapter_groups(
+    output_dir: Path,
+    groups: list[ChapterGroup],
+    book_meta: dict,
+    book_slug: str,
+) -> None:
+    """Write depth-guarded output: one .md file per chapter.
+
+    Each chapter file contains the chapter heading (#) followed by
+    subsections as ##/### markdown headings.
+
+    Structure:
+        book-slug/
+            00-book.md
+            01-chapter-1-slug.md  ← Chapter 1 + all subsections inside
+            02-chapter-2-slug.md
+    """
+    from .split import ChapterGroup
+
+    book_dir = output_dir / book_slug
+    book_dir.mkdir(parents=True, exist_ok=True)
+
+    # 00-book.md
+    book_card = make_book_frontmatter(book_meta)
+    (book_dir / "00-book.md").write_text(book_card)
+
+    for group in groups:
+        chapter_slug = make_slug(group.chapter_title)
+        chapter_file = book_dir / f"{group.chapter_no:02d}-{chapter_slug}.md"
+
+        lines: list[str] = []
+        for i, chunk in enumerate(group.chunks):
+            if i == 0:
+                # First chunk = chapter heading with #
+                lines.append(_chunk_to_markdown(chunk, level_prefix="#"))
+            else:
+                # Subsections = ## or ###
+                level = "##" if chunk.level >= 3 else "#"
+                lines.append(_chunk_to_markdown(chunk, level_prefix=level))
+
+        chapter_file.write_text("\n\n".join(lines), encoding="utf-8")

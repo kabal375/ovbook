@@ -65,5 +65,6 @@ def test_cli_convert(pdf_fixture, tmp_path):
     result = runner.invoke(app, ["convert", str(pdf_fixture), "-o", str(tmp_path)])
     assert result.exit_code == 0
     assert "Written" in result.output
-    output_dir = tmp_path / pdf_fixture.stem
+    # Output dir is slugified from PDF title "Test Book" → "test-book"
+    output_dir = tmp_path / "test-book"
     assert (output_dir / "00-book.md").exists()

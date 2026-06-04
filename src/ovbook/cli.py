@@ -92,7 +92,7 @@ def convert(
 
         # Group by chapter (depth guard)
         chunks = []
-        groups = group_chunks_by_chapter(raw_chunks, min_chapter_score=5.0)
+        groups = group_chunks_by_chapter(raw_chunks, min_chapter_score=7.0)
         for g in groups:
             chunks.extend(g.chunks)
 

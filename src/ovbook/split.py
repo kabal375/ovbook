@@ -76,10 +76,14 @@ def score_heading(c: Chunk, body_font_size: float) -> float:
         s += 6
     if re.match(r"^\d+(\.\d+)*\s+\S+", text):
         s += 5
-    if c.font_size >= body_font_size * 1.18:
-        s += 3
+    if c.font_size >= body_font_size * 2.0:
+        s += 5  # book title / massive heading
+    elif c.font_size >= body_font_size * 1.6:
+        s += 3  # chapter-level
+    elif c.font_size >= body_font_size * 1.18:
+        s += 1  # subsection-level
     if c.is_bold:
-        s += 2
+        s += 1  # reduced from +2
 
     # --- Pre-computed flags ---
     if c.near_drawing:
@@ -293,7 +297,7 @@ def group_chunks_by_chapter(
     chapter_counter = 0
 
     for chunk in chunks:
-        if chunk.level == 2 and chunk.score >= min_chapter_score:
+        if chunk.level <= 2 and chunk.score >= min_chapter_score:
             # Assign sequential chapter number if not already set
             if chunk.chapter_no == 0:
                 chapter_counter += 1

@@ -191,9 +191,12 @@ def _chunk_to_markdown(chunk: Chunk, level_prefix: str = "##") -> str:
 
 
 def make_slug(text: str) -> str:
-    """Create a filesystem-safe slug from text, falling back to untitled."""
+    """Create a filesystem-safe slug from text, falling back to content prefix."""
     slug = _slugify(text)
-    return slug if slug else "untitled"
+    if slug:
+        # Limit slug length
+        return slug[:60]
+    return "untitled"
 
 
 def write_chapter_groups(
@@ -202,19 +205,22 @@ def write_chapter_groups(
     book_meta: dict,
     book_slug: str,
 ) -> None:
-    """Write depth-guarded output: one .md file per chapter.
+    """Write depth-guarded output: one directory per chapter, one .md per chunk.
 
-    Each chapter file contains the chapter heading (#) followed by
-    subsections as ##/### markdown headings.
+    Each chapter gets its own directory containing individual .md files for
+    the chapter heading and all subsections.
 
     Structure:
         book-slug/
             00-book.md
-            01-chapter-1-slug.md  ← Chapter 1 + all subsections inside
-            02-chapter-2-slug.md
+            chapter-01-slug/
+                01-chapter-heading.md
+                02-subsection-1.md
+                03-subsection-2.md
+            chapter-02-slug/
+                01-chapter-heading.md
+                02-subsection-1.md
     """
-    from .split import ChapterGroup
-
     book_dir = output_dir / book_slug
     book_dir.mkdir(parents=True, exist_ok=True)
 
@@ -224,15 +230,13 @@ def write_chapter_groups(
 
     for group in groups:
         chapter_slug = make_slug(group.chapter_title)
-        chapter_file = book_dir / f"{group.chapter_no:02d}-{chapter_slug}.md"
+        chapter_dir = book_dir / f"chapter-{group.chapter_no:02d}-{chapter_slug}"
+        chapter_dir.mkdir(parents=True, exist_ok=True)
 
-        lines: list[str] = []
-        for i, chunk in enumerate(group.chunks):
-            if i == 0:
-                # First chunk = chapter heading with #
-                lines.append(_chunk_to_markdown(chunk, level_prefix="#"))
-            else:
-                # Subsections = ## regardless of original level
-                lines.append(_chunk_to_markdown(chunk, level_prefix="##"))
-
-        chapter_file.write_text("\n\n".join(lines), encoding="utf-8")
+        for chunk in group.chunks:
+            seq_str = f"{chunk.sequence + 1:02d}"
+            # For body chunks with empty heading, use first words of content
+            heading_for_slug = chunk.heading if chunk.heading.strip() else chunk.content[:60].strip()
+            chunk_slug = make_slug(heading_for_slug)
+            chunk_file = chapter_dir / f"{seq_str}-{chunk_slug}.md"
+            _write_chunk(chunk_file, chunk)

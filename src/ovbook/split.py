@@ -55,6 +55,10 @@ def score_heading(c: Chunk, body_font_size: float) -> float:
     s = 0.0
     text = c.heading.strip()
 
+    # Empty heading = body text, not a heading candidate
+    if not text:
+        return s
+
     # --- Negative signals ---
     if len(text) < 4:
         s -= 5

@@ -88,7 +88,7 @@ def convert(
 
         # Filter noise
         raw_chunks = filter_toc_chunks(raw_chunks)
-        raw_chunks = filter_low_score_chunks(raw_chunks, min_score=0.0)
+        raw_chunks = filter_low_score_chunks(raw_chunks, min_score=-1.0)
 
         # Group by chapter (depth guard)
         chunks = []

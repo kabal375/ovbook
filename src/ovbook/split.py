@@ -280,7 +280,7 @@ def group_chunks_by_chapter(
     chapter_counter = 0
 
     for chunk in chunks:
-        if chunk.level <= 2 and chunk.score >= min_chapter_score:
+        if chunk.score >= min_chapter_score and chunk.level <= 3:
             if chunk.chapter_no == 0:
                 chapter_counter += 1
                 chunk.chapter_no = chapter_counter

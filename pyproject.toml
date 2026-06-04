@@ -1,0 +1,19 @@
+[project]
+name = "ovbook"
+version = "0.1.0"
+description = "Convert books to structured markdown chunks for OpenViking indexing"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "lxml>=6.1.1",
+    "typer>=0.26.7",
+]
+
+[project.scripts]
+ovbook = "ovbook.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+]

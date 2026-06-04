@@ -50,7 +50,18 @@ def write_chunks(
 
 
 def _write_flat(target: Path, chunks: list[Chunk]) -> None:
-    """Write chunks in nested dirs (no Part grouping)."""
+    """Group chunks by chapter_no when available, otherwise flat."""
+    from collections import OrderedDict
+
+    has_chapters = any(c.chapter_no > 0 for c in chunks)
+    if has_chapters:
+        _write_by_chapter(target, chunks)
+    else:
+        _write_each_chunk_dir(target, chunks)
+
+
+def _write_each_chunk_dir(target: Path, chunks: list[Chunk]) -> None:
+    """Original flat behavior: each chunk in its own NN-slug/ directory."""
     for chunk in chunks:
         slug = _slugify(chunk.heading)
         seq_str = f"{chunk.sequence + 1:02d}"
@@ -60,23 +71,68 @@ def _write_flat(target: Path, chunks: list[Chunk]) -> None:
         chunk_dir = target / dir_name
         chunk_dir.mkdir(parents=True, exist_ok=True)
 
-        front = make_chunk_frontmatter({
-            "heading": chunk.heading,
-            "level": chunk.level,
-            "sequence": chunk.sequence,
-            "chapter_no": chunk.chapter_no or None,
-            "chapter_title": chunk.chapter_title or None,
-            "section_no": chunk.section_no or None,
-            "section_title": chunk.section_title or None,
-            "part": chunk.part or None,
-            "sequence_str": chunk.sequence_str or None,
-        })
-        body = chunk.content if chunk.content else ""
-        (chunk_dir / file_name).write_text(front + body)
+        _write_chunk(chunk_dir / file_name, chunk)
+
+
+def _write_by_chapter(target: Path, chunks: list[Chunk]) -> None:
+    """Group chunks by chapter_no into chapter directories.
+
+        slug/
+            00-book.md
+            chapter-01-title/
+                01-chunk-slug.md
+                02-chunk-slug.md
+            chapter-05-title/
+                126-chunk-slug.md
+    """
+    from collections import OrderedDict
+
+    pre_chapter: list[Chunk] = []
+    chapters: OrderedDict[int, list[Chunk]] = OrderedDict()
+
+    for chunk in chunks:
+        if chunk.chapter_no == 0:
+            pre_chapter.append(chunk)
+        else:
+            chapters.setdefault(chunk.chapter_no, []).append(chunk)
+
+    # Pre-chapter chunks (foreword, introduction without "Chapter" heading)
+    _write_each_chunk_dir(target, pre_chapter)
+
+    # Grouped by chapter
+    for chapter_no, chapter_chunks in chapters.items():
+        chapter_title = chapter_chunks[0].chapter_title or f"Chapter {chapter_no}"
+        chapter_slug = _slugify(chapter_title)
+        chapter_dir = target / f"chapter-{chapter_no:02d}-{chapter_slug}"
+
+        for chunk in chapter_chunks:
+            slug = _slugify(chunk.heading)
+            seq_str = f"{chunk.sequence + 1:02d}"
+            file_name = f"{seq_str}-{slug}.md"
+            chunk_path = chapter_dir / file_name
+            chunk_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_chunk(chunk_path, chunk)
+
+
+def _write_chunk(path: Path, chunk: Chunk) -> None:
+    """Write a single chunk file with frontmatter."""
+    front = make_chunk_frontmatter({
+        "heading": chunk.heading,
+        "level": chunk.level,
+        "sequence": chunk.sequence,
+        "chapter_no": chunk.chapter_no or None,
+        "chapter_title": chunk.chapter_title or None,
+        "section_no": chunk.section_no or None,
+        "section_title": chunk.section_title or None,
+        "part": chunk.part or None,
+        "sequence_str": chunk.sequence_str or None,
+    })
+    body = chunk.content if chunk.content else ""
+    path.write_text(front + body)
 
 
 def _write_with_parts(target: Path, chunks: list[Chunk]) -> None:
-    """Group chunks by Part into part directories."""
+    """Group chunks by Part into part directories, then by chapter inside each part."""
     from collections import OrderedDict
 
     parts: OrderedDict[str, list[Chunk]] = OrderedDict()
@@ -92,25 +148,31 @@ def _write_with_parts(target: Path, chunks: list[Chunk]) -> None:
         part_dir = target / f"{part_idx + 1:02d}-{part_slug}"
         part_dir.mkdir(parents=True, exist_ok=True)
 
+        # Within a part, group by chapter
+        chapters: OrderedDict[int, list[Chunk]] = OrderedDict()
         for chunk in part_chunks:
-            slug = _slugify(chunk.heading)
-            seq_str = f"{chunk.sequence + 1:02d}"
-            dir_name = f"{seq_str}-{slug}" if not chunk.part else f"{seq_str}-{slug}"
-            file_name = f"{seq_str}-{slug}.md"
+            chapters.setdefault(chunk.chapter_no, []).append(chunk)
 
-            chunk_dir = part_dir / dir_name
-            chunk_dir.mkdir(parents=True, exist_ok=True)
+        for chapter_no, chapter_chunks in chapters.items():
+            if chapter_no == 0:
+                # Pre-chapter chunks in the part
+                for chunk in chapter_chunks:
+                    slug = _slugify(chunk.heading)
+                    seq_str = f"{chunk.sequence + 1:02d}"
+                    dir_name = f"{seq_str}-{slug}"
+                    file_name = f"{seq_str}-{slug}.md"
+                    chunk_dir = part_dir / dir_name
+                    chunk_dir.mkdir(parents=True, exist_ok=True)
+                    _write_chunk(chunk_dir / file_name, chunk)
+            else:
+                chapter_title = chapter_chunks[0].chapter_title or f"Chapter {chapter_no}"
+                chapter_slug = _slugify(chapter_title)
+                chapter_dir = part_dir / f"chapter-{chapter_no:02d}-{chapter_slug}"
 
-            front = make_chunk_frontmatter({
-                "heading": chunk.heading,
-                "level": chunk.level,
-                "sequence": chunk.sequence,
-                "chapter_no": chunk.chapter_no or None,
-                "chapter_title": chunk.chapter_title or None,
-                "section_no": chunk.section_no or None,
-                "section_title": chunk.section_title or None,
-                "part": chunk.part or None,
-                "sequence_str": chunk.sequence_str or None,
-            })
-            body = chunk.content if chunk.content else ""
-            (chunk_dir / file_name).write_text(front + body)
+                for chunk in chapter_chunks:
+                    slug = _slugify(chunk.heading)
+                    seq_str = f"{chunk.sequence + 1:02d}"
+                    file_name = f"{seq_str}-{slug}.md"
+                    chunk_path = chapter_dir / file_name
+                    chunk_path.parent.mkdir(parents=True, exist_ok=True)
+                    _write_chunk(chunk_path, chunk)

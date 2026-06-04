@@ -12,7 +12,7 @@ from ovbook.writer import write_chunks
 
 
 def test_no_part_structure_unchanged(tmp_path: Path):
-    """Without Part, structure stays nested-by-chunk as before."""
+    """Without Part but with chapters — grouped by chapter_no."""
     chunks = [
         Chunk(heading="Chapter 1", content="Intro", level=2, sequence=0,
               chapter_no=1, chapter_title="Chapter 1"),
@@ -21,13 +21,15 @@ def test_no_part_structure_unchanged(tmp_path: Path):
     ]
     write_chunks(tmp_path, {}, chunks, slug="test-book")
     assert (tmp_path / "test-book" / "00-book.md").is_file()
-    # Chunks are still in dirs as before
-    assert (tmp_path / "test-book" / "01-chapter-1" / "01-chapter-1.md").is_file()
-    assert (tmp_path / "test-book" / "02-section-1" / "02-section-1.md").is_file()
+    # Chunks grouped under chapter-01-chapter-1/
+    chapter_dir = tmp_path / "test-book" / "chapter-01-chapter-1"
+    assert chapter_dir.is_dir()
+    assert (chapter_dir / "01-chapter-1.md").is_file()
+    assert (chapter_dir / "02-section-1.md").is_file()
 
 
 def test_part_groups_chapters(tmp_path: Path):
-    """With Part, chapters are grouped under part directory."""
+    """With Part, chapters are grouped under part and further by chapter."""
     chunks = [
         Chunk(heading="Chapter 1", content="A", level=2, sequence=0,
               chapter_no=1, chapter_title="Chapter 1", part="Part I"),
@@ -41,11 +43,15 @@ def test_part_groups_chapters(tmp_path: Path):
     part_dirs = sorted([d for d in book_dir.iterdir() if d.is_dir()])
     assert len(part_dirs) == 1
     assert "part-i" in part_dirs[0].name
-    # Chapter files inside part dir
-    chapter_files = sorted(part_dirs[0].iterdir())
-    assert len(chapter_files) == 2
-    assert "01-chapter-1" in chapter_files[0].name
-    assert "02-chapter-2" in chapter_files[1].name
+    # Chapter directories inside part dir
+    chapter_dirs = sorted(part_dirs[0].iterdir())
+    assert len(chapter_dirs) == 2
+    assert "chapter-01-chapter-1" in chapter_dirs[0].name
+    assert "chapter-02-chapter-2" in chapter_dirs[1].name
+    # Files inside each chapter dir
+    ch1_files = sorted(chapter_dirs[0].iterdir())
+    assert len(ch1_files) == 1
+    assert "01-chapter-1.md" in ch1_files[0].name
 
 
 def test_multiple_parts(tmp_path: Path):

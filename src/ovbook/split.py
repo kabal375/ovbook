@@ -290,9 +290,17 @@ def group_chunks_by_chapter(
     """
     groups: list[ChapterGroup] = []
     current: ChapterGroup | None = None
+    chapter_counter = 0
 
     for chunk in chunks:
         if chunk.level == 2 and chunk.score >= min_chapter_score:
+            # Assign sequential chapter number if not already set
+            if chunk.chapter_no == 0:
+                chapter_counter += 1
+                chunk.chapter_no = chapter_counter
+            else:
+                chapter_counter = chunk.chapter_no
+
             current = ChapterGroup(
                 chapter_no=chunk.chapter_no,
                 chapter_title=chunk.heading,

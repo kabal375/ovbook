@@ -182,7 +182,10 @@ def _chunk_to_markdown(chunk: Chunk, level_prefix: str = "##") -> str:
     """Render a chunk as markdown with heading and body.
 
     Subsections (H3+) get level_prefix, first chunk in chapter gets '#'.
+    Body-level chunks (no heading) render as plain text.
     """
+    if not chunk.heading.strip():
+        return chunk.content
     parts = [f"{level_prefix} {chunk.heading}", "", chunk.content]
     return "\n".join(parts).strip()
 
@@ -229,8 +232,7 @@ def write_chapter_groups(
                 # First chunk = chapter heading with #
                 lines.append(_chunk_to_markdown(chunk, level_prefix="#"))
             else:
-                # Subsections = ## or ###
-                level = "##" if chunk.level >= 3 else "#"
-                lines.append(_chunk_to_markdown(chunk, level_prefix=level))
+                # Subsections = ## regardless of original level
+                lines.append(_chunk_to_markdown(chunk, level_prefix="##"))
 
         chapter_file.write_text("\n\n".join(lines), encoding="utf-8")

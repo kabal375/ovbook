@@ -135,54 +135,74 @@ def extract_pdf_rich(path: Path) -> list:
             if block["type"] != 0:  # skip images
                 continue
 
-            for line in block["lines"]:
-                text_parts = []
-                max_size = 0.0
-                is_bold = False
+            # Aggregate all spans in this block into a single text
+            block_text = ""
+            block_max_size = 0.0
+            block_is_bold = False
+            block_bbox = None
 
+            for line in block["lines"]:
                 for span in line["spans"]:
-                    text_parts.append(span["text"])
-                    max_size = max(max_size, span["size"])
-                    # Check font name for bold
+                    block_text += span["text"]
+                    block_max_size = max(block_max_size, span["size"])
                     font = span.get("font", "")
                     if "Bold" in font or "bold" in font or "Black" in font:
-                        is_bold = True
-                    # Check font flags (bit 2 = bold)
+                        block_is_bold = True
                     if span.get("flags", 0) & 2:
-                        is_bold = True
+                        block_is_bold = True
+                block_text += "\n"
 
-                text = "".join(text_parts).strip()
-                if not text:
-                    continue
+                if "bbox" in line and block_bbox is None:
+                    block_bbox = fitz.Rect(line["bbox"])
 
-                # Determine if near drawing
-                bbox = fitz.Rect(line["bbox"]) if "bbox" in line else None
-                near_drawing = _is_near_drawing(bbox, drawings) if bbox and drawings else False
+            text = block_text.strip()
+            if not text:
+                continue
 
-                # Detect TOC entry: leader dots with optional page tail
-                looks_like_toc = bool(re.search(r"\.{3,}\s*\d*\s*$", text)) or bool(re.match(r"\.{3,}", text))
+            # Split heading from body for heading-level blocks
+            lines = text.split("\n", 1)
+            first_line = lines[0].strip()
+            heading_text = ""
+            body_text = text
 
-                # Detect Index letter
-                looks_like_index = bool(re.match(r"^[A-ZА-Я]$", text)) or bool(re.match(r"^[A-Z],\s*[A-Z]$", text))
+            # Determine if near drawing
+            near_drawing = False
+            if block_bbox and drawings:
+                near_drawing = _is_near_drawing(block_bbox, drawings)
 
-                # Heading level by font size
-                level = 3  # default: body-level
-                if max_size >= body_size * 1.3:
-                    ratio = max_size / body_size
-                    if ratio >= 2.0:
-                        level = 1
-                    elif ratio >= 1.6:
-                        level = 2
+            # Detect TOC entry: leader dots with optional page tail
+            first_line = text.split("\n")[0]
+            looks_like_toc = bool(re.search(r"\.{3,}\s*\d*\s*$", first_line)) or bool(re.match(r"\.{3,}", first_line))
+
+            # Detect Index letter
+            looks_like_index = bool(re.match(r"^[A-ZА-Я]$", first_line)) or bool(re.match(r"^[A-Z],\s*[A-Z]$", first_line))
+
+            # Heading level by font size
+            level = 3  # default: body-level
+            if block_max_size >= body_size * 1.3:
+                ratio = block_max_size / body_size
+                if ratio >= 2.0:
+                    level = 1
+                elif ratio >= 1.6:
+                    level = 2
+                else:
+                    level = 3
+
+                # Split heading from body for heading-level blocks
+                if level < 3:
+                    heading_text = first_line.strip().replace("\x07", "").replace("\b", "")
+                    if len(lines) > 1:
+                        body_text = lines[1].strip()
                     else:
-                        level = 3
+                        body_text = ""
 
                 chunk = Chunk(
-                    heading=text,
-                    content=text,
+                    heading=heading_text,
+                    content=body_text if heading_text else text,
                     level=level,
                     sequence=seq,
-                    font_size=max_size,
-                    is_bold=is_bold,
+                    font_size=block_max_size,
+                    is_bold=block_is_bold,
                     near_drawing=near_drawing,
                     looks_like_toc_entry=looks_like_toc,
                     looks_like_index_letter=looks_like_index,

@@ -216,8 +216,8 @@ FB2 новых зависимостей не требует (stdlib ElementTree)
 ### Совместимость
 - Существующие PDF-тесты — зелёные (readers/pdf.py оборачивает текущую логику)
 - `test_writer_hierarchy.py` — **удаляется** (тестировал удаляемый write_chunks)
-- `test_writer.py` — sec:ции про write_chunks удаляются; `_resolve_chapter_title`
-  и `_slugify` тесты остаются
+- `test_writer.py` — блоки про write_chunks удаляются; тесты
+  `_resolve_chapter_title` и `_slugify` остаются
 - `test_metadata.py::test_domains_propagate_to_chunks` — переписать под новый путь
 
 ## Что НЕ входит

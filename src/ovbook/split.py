@@ -46,7 +46,7 @@ class Chunk:
         self.content = self.content.strip()
 
 
-def score_heading(c: Chunk, body_font_size: float) -> float:
+def score_heading(c: "Chunk", body_font_size: float) -> float:
     """Score a Chunk candidate for being a real heading.
 
     Positive signals: chapter keyword, numbered heading, larger font, bold.
@@ -55,23 +55,19 @@ def score_heading(c: Chunk, body_font_size: float) -> float:
     s = 0.0
     text = c.heading.strip()
 
-    # Empty heading = body text, not a heading candidate
     if not text:
         return s
 
     # --- Negative signals ---
     if len(text) < 4:
         s -= 5
-    # TOC entry: leader dots + optional page number at end
     if re.search(r"\.{3,}\s*\d*\s*$", text):
         s -= 8
     if re.match(r"\.{3,}", text):
-        s -= 8  # pure dots line
-    # Pure index letter (single uppercase or single char with page numbers following)
+        s -= 8
     if re.match(r"^[A-ZА-Я]$", text) or re.match(r"^[A-Z],\s*[A-Z]$", text):
         if c.level >= 2:
             s -= 8
-    # Paragraph symbol or random chart artifact
     if re.match(r"^[\W_]+$", text):
         s -= 10
 
@@ -81,13 +77,13 @@ def score_heading(c: Chunk, body_font_size: float) -> float:
     if re.match(r"^\d+(\.\d+)*\s+\S+", text):
         s += 5
     if c.font_size >= body_font_size * 2.0:
-        s += 5  # book title / massive heading
+        s += 5
     elif c.font_size >= body_font_size * 1.6:
-        s += 3  # chapter-level
+        s += 3
     elif c.font_size >= body_font_size * 1.18:
-        s += 1  # subsection-level
+        s += 1
     if c.is_bold:
-        s += 1  # reduced from +2
+        s += 1
 
     # --- Pre-computed flags ---
     if c.near_drawing:
@@ -100,10 +96,10 @@ def score_heading(c: Chunk, body_font_size: float) -> float:
     return s
 
 
-def _enrich_chunks(chunks: list[Chunk]) -> None:
+def _enrich_chunks(chunks: list["Chunk"]) -> None:
     """Assign hierarchy metadata (chapter_no, section_no, part, sequence_str).
 
-    H2 headings: extract number from leading digit or keyword.
+    H1/H2 headings: extract number from leading digit or keyword.
     H3 headings: extract X.Y number or sequential position.
     Unnumbered headings get sequential numbering.
     """
@@ -114,21 +110,18 @@ def _enrich_chunks(chunks: list[Chunk]) -> None:
     section_counter = 0
 
     for chunk in chunks:
-        # Track part transitions (set by splitter)
         if chunk.part:
             current_part = chunk.part
         chunk.part = current_part
 
-        # Detect Chapter (H2)
-        if chunk.level == 2:
+        # Detect Chapter: H1 (large-font "CHAPTER 1" from PDFs) or H2
+        if chunk.level <= 2:
             m = _H2_NUM_RE.match(chunk.heading)
             if m:
-                # First group from leading digit, second from keyword+digit
                 num = m.group(1) or m.group(2)
                 current_chapter_no = int(num)
                 chapter_counter = current_chapter_no
             else:
-                # No number found — sequential fallback
                 chapter_counter += 1
                 current_chapter_no = chapter_counter
             current_chapter_title = chunk.heading
@@ -142,10 +135,8 @@ def _enrich_chunks(chunks: list[Chunk]) -> None:
             m = _H3_NUM_RE.match(chunk.heading)
             if m:
                 if m.group(5):
-                    # Section 4 — keyword + single digit
                     chunk.section_no = int(m.group(5))
                 else:
-                    # X.Y pattern — extract chapter and section
                     ch = m.group(1) or m.group(3)
                     sec = m.group(2) or m.group(4)
                     chunk.section_no = int(sec)
@@ -154,12 +145,10 @@ def _enrich_chunks(chunks: list[Chunk]) -> None:
                         current_chapter_no = section_ch
                         chunk.chapter_no = current_chapter_no
             else:
-                # Try simple leading number "### 2. Section" or "### 3) Title"
                 sn = re.match(r"^(\d+)[.)]\s+", chunk.heading)
                 if sn:
                     chunk.section_no = int(sn.group(1))
                 else:
-                    # No explicit number — sequential within chapter
                     section_counter += 1
                     chunk.section_no = section_counter
             chunk.section_title = chunk.heading
@@ -169,7 +158,7 @@ def _enrich_chunks(chunks: list[Chunk]) -> None:
         chunk.sequence_str = f"{chunk.chapter_no:02d}{chunk.section_no:02d}"
 
 
-def split_into_chunks(markdown: str) -> list[Chunk]:
+def split_into_chunks(markdown: str) -> list["Chunk"]:
     """Split markdown into chunks by heading boundaries.
 
     H1 headings matching "Part X" are Part boundaries (not chunks).
@@ -182,11 +171,10 @@ def split_into_chunks(markdown: str) -> list[Chunk]:
     current_content: list[str] = []
     seq = 0
     found_any_heading = False
-    _part_state = [""]  # mutable container for closure access
+    current_part = ""  # replaces _part_state = [""] mutable-container trick
 
     def flush():
         nonlocal seq, current_heading
-        part = _part_state[0]
         if current_heading is not None:
             joined = "\n".join(current_content).strip()
             if joined:
@@ -195,10 +183,9 @@ def split_into_chunks(markdown: str) -> list[Chunk]:
                     content=joined,
                     level=current_level,
                     sequence=seq,
-                    part=part,
+                    part=current_part,
                 ))
                 seq += 1
-        # Reset state after flush to prevent double-emit
         current_heading = None
         current_content.clear()
 
@@ -211,10 +198,8 @@ def split_into_chunks(markdown: str) -> list[Chunk]:
             # H1: Part or book title
             if level == 1:
                 if _PART_RE.match(heading):
-                    # Part boundary — flush current chunk first
                     flush()
-                    _part_state[0] = heading
-                # Book title or other H1 — skip
+                    current_part = heading
                 continue
 
             # H2+ — start a new chunk
@@ -241,10 +226,7 @@ _CONTENT_END_RE = re.compile(r"^Index$|^Where to Go Next$", re.IGNORECASE)
 
 
 def _is_content_start(heading: str) -> bool:
-    """Check if heading signals start of real content.
-
-    Triggers: keyword (CHAPTER/Part/Appendix) or leading number (1. / 2 / 3).
-    """
+    """Check if heading signals start of real content."""
     if _CONTENT_START_RE.match(heading):
         return True
     if re.match(r"^\d+[.)\s]", heading):
@@ -252,22 +234,19 @@ def _is_content_start(heading: str) -> bool:
     return False
 
 
-def filter_content(chunks: list[Chunk]) -> list[Chunk]:
-    """Remove front matter (before first Chapter/Part/Appendix) and index (from 'Index' onward)."""
+def filter_content(chunks: list["Chunk"]) -> list["Chunk"]:
+    """Remove front matter (before first Chapter/Part/Appendix) and index."""
     if not chunks:
         return []
 
-    # Find content start
     start = 0
     for i, c in enumerate(chunks):
         if _is_content_start(c.heading):
             start = i
             break
     else:
-        # No content boundary found — return all
         return chunks
 
-    # Find content end (Index)
     end = len(chunks)
     for i, c in enumerate(chunks[start:], start=start):
         if _CONTENT_END_RE.match(c.heading):
@@ -283,18 +262,18 @@ class ChapterGroup:
 
     chapter_no: int
     chapter_title: str
-    chunks: list[Chunk]
+    chunks: list["Chunk"]
 
 
 def group_chunks_by_chapter(
-    chunks: list[Chunk],
+    chunks: list["Chunk"],
     min_chapter_score: float = 5.0,
 ) -> list[ChapterGroup]:
     """Group chunks into chapters.
 
-    H2 chunks with score >= min_chapter_score start a new chapter.
-    H3 chunks and low-score chunks get grouped under the nearest preceding chapter.
-    Returns list of ChapterGroups. Chunks before the first chapter are dropped.
+    H1/H2 chunks with score >= min_chapter_score start a new chapter.
+    H3 chunks and low-score chunks are grouped under the nearest preceding chapter.
+    Chunks before the first chapter are dropped.
     """
     groups: list[ChapterGroup] = []
     current: ChapterGroup | None = None
@@ -302,7 +281,6 @@ def group_chunks_by_chapter(
 
     for chunk in chunks:
         if chunk.level <= 2 and chunk.score >= min_chapter_score:
-            # Assign sequential chapter number if not already set
             if chunk.chapter_no == 0:
                 chapter_counter += 1
                 chunk.chapter_no = chapter_counter
@@ -321,11 +299,11 @@ def group_chunks_by_chapter(
     return groups
 
 
-def filter_toc_chunks(chunks: list[Chunk]) -> list[Chunk]:
+def filter_toc_chunks(chunks: list["Chunk"]) -> list["Chunk"]:
     """Remove chunks that look like TOC entries."""
     return [c for c in chunks if not c.looks_like_toc_entry]
 
 
-def filter_low_score_chunks(chunks: list[Chunk], min_score: float = 0.0) -> list[Chunk]:
+def filter_low_score_chunks(chunks: list["Chunk"], min_score: float = 0.0) -> list["Chunk"]:
     """Remove chunks with score at or below threshold (noise/artifacts)."""
     return [c for c in chunks if c.score > min_score]

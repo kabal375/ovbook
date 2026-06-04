@@ -1,8 +1,15 @@
 """ovbook CLI — convert books to structured markdown chunks for OpenViking."""
 
+import re
 from pathlib import Path
 
 import typer
+
+
+def slugify(text: str) -> str:
+    """Convert text to a filesystem-safe slug."""
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
 
 app = typer.Typer(
     name="ovbook",
@@ -23,7 +30,7 @@ def main(
 def convert(
     input: Path = typer.Argument(
         ...,
-        help="Path to input book file (.fb2)",
+        help="Path to input book file (.pdf / .fb2)",
         exists=True,
         file_okay=True,
         dir_okay=False,
@@ -48,7 +55,7 @@ def convert(
 ):
     """Convert a book file into structured markdown chunks for OpenViking.
 
-    Detects format from file extension by default. Supports: fb2.
+    Detects format from file extension by default. Supports: pdf, fb2.
     Writes a chunk tree suitable for OpenViking watch indexing.
     """
     fmt = format or input.suffix.lstrip(".").lower()
@@ -85,7 +92,8 @@ def convert(
 
     from ovbook.writer import write_chunks
 
-    output_path = output / input.stem
+    slug = slugify(book_meta.get("title", input.stem))
+    output_path = output / slug
     output_path.mkdir(parents=True, exist_ok=True)
     write_chunks(output_path, book_meta, chunks)
     typer.echo(f"Written {len(chunks)} chunks to {output_path}")

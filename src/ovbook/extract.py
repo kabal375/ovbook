@@ -78,21 +78,33 @@ def get_pdf_metadata(path: Path) -> dict:
     meta = doc.metadata
     doc.close()
 
+    import re
+    title = meta.get("title", path.stem)
+    book_id = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     result: dict = {
-        "id": path.stem,
-        "title": meta.get("title", path.stem),
+        "id": book_id,
+        "title": title,
         "authors": [],
         "language": meta.get("language", "en"),
     }
 
     author = meta.get("author", "")
     if author:
-        # Split multiple authors by common delimiters
         import re
-        for a in re.split(r"[;,/]| and ", author):
-            a = a.strip()
-            if a:
-                result["authors"].append(a)
+        # Split on ; first (PDF format: Last1,First1;Last2,First2)
+        for part in re.split(r"\s*;\s*", author):
+            part = part.strip().rstrip(";")
+            if not part:
+                continue
+            # If "Last, First" format, reverse it
+            if "," in part:
+                names = [n.strip() for n in part.split(",") if n.strip()]
+                if len(names) == 2:
+                    result["authors"].append(f"{names[1]} {names[0]}")
+                else:
+                    result["authors"].append(part)
+            else:
+                result["authors"].append(part)
 
     return result
 

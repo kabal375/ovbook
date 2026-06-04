@@ -1,5 +1,6 @@
 """Extract text from books (PDF primary, fb2 fallback) and convert to markdown."""
 
+from collections import Counter
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
@@ -31,8 +32,6 @@ def extract_pdf(path: Path) -> str:
     if not body_sizes:
         return ""
 
-    # Determine body text size (most common size)
-    from collections import Counter
     size_counter = Counter(round(s, 1) for s in body_sizes)
     body_size = size_counter.most_common(1)[0][0]
 
@@ -54,7 +53,6 @@ def extract_pdf(path: Path) -> str:
 
                     # Heading detection: font significantly larger than body
                     if max_size >= body_size * 1.3:
-                        # Determine heading level by size ratio
                         ratio = max_size / body_size
                         if ratio >= 2.0:
                             level = 1
@@ -109,17 +107,23 @@ def _is_near_drawing(bbox, drawings, threshold: float = 20.0) -> bool:
     return False
 
 
-def extract_pdf_rich(path: Path) -> list:
+def extract_pdf_rich(path: Path, body_size: float | None = None) -> list:
     """Extract structured chunks from a PDF with rich metadata for scoring.
 
     Returns list[Chunk] with font_size, is_bold, near_drawing, etc.
     Body-level text blocks are accumulated and attached to the nearest
     preceding heading chunk as content.
+
+    Args:
+        path: Path to the PDF file.
+        body_size: Pre-computed body font size. If None, computed internally.
+                   Pass the value from detect_profile() to avoid a redundant scan.
     """
     from .split import Chunk, score_heading
 
     doc = fitz.open(str(path))
-    body_size = _compute_body_size(doc)
+    if body_size is None:
+        body_size = _compute_body_size(doc)
 
     chunks: list[Chunk] = []
     seq = 0
@@ -152,7 +156,6 @@ def extract_pdf_rich(path: Path) -> list:
             if block["type"] != 0:  # skip images
                 continue
 
-            # Aggregate all spans in this block into a single text
             block_text = ""
             block_max_size = 0.0
             block_is_bold = False
@@ -176,23 +179,17 @@ def extract_pdf_rich(path: Path) -> list:
             if not text:
                 continue
 
-            # Determine if near drawing
             near_drawing = False
             if block_bbox and drawings:
                 near_drawing = _is_near_drawing(block_bbox, drawings)
 
-            # Detect TOC entry: leader dots with optional page tail
             first_line = text.split("\n")[0]
             looks_like_toc = bool(re.search(r"\.{3,}\s*\d*\s*$", first_line)) or bool(re.match(r"\.{3,}", first_line))
-
-            # Detect Index letter
             looks_like_index = bool(re.match(r"^[A-ZА-Я]$", first_line)) or bool(re.match(r"^[A-Z],\s*[A-Z]$", first_line))
 
-            # Decide: heading-level or body-level?
             is_heading_level = block_max_size >= body_size * 1.3
 
             if is_heading_level:
-                # Flush any accumulated body text before starting new chunk
                 flush_body()
 
                 ratio = block_max_size / body_size
@@ -203,7 +200,6 @@ def extract_pdf_rich(path: Path) -> list:
                 else:
                     level = 3
 
-                # Split heading from body for H2+ level blocks
                 lines = text.split("\n", 1)
                 heading_text = first_line.strip().replace("\x07", "").replace("\b", "")
                 if level < 3 and len(lines) > 1:
@@ -227,12 +223,9 @@ def extract_pdf_rich(path: Path) -> list:
                 chunks.append(chunk)
                 seq += 1
             else:
-                # Body-level block — accumulate for attaching to preceding heading
                 body_accumulator.append(text)
 
-    # Flush remaining body text
     flush_body()
-
     doc.close()
     return chunks
 
@@ -243,11 +236,10 @@ def get_pdf_metadata(path: Path) -> dict:
     meta = doc.metadata
     doc.close()
 
-    import re
-    title = meta.get("title", path.stem)
+    # `or path.stem` handles both missing key and empty-string value in PDF metadata
+    title = meta.get("title") or path.stem
     book_id = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
 
-    # Extract year from creationDate (format: D:20220315184501Z)
     year = None
     cdate = meta.get("creationDate", "")
     if cdate:
@@ -267,13 +259,10 @@ def get_pdf_metadata(path: Path) -> dict:
 
     author = meta.get("author", "")
     if author:
-        import re
-        # Split on ; first (PDF format: Last1,First1;Last2,First2)
         for part in re.split(r"\s*;\s*", author):
             part = part.strip().rstrip(";")
             if not part:
                 continue
-            # If "Last, First" format, reverse it
             if "," in part:
                 names = [n.strip() for n in part.split(",") if n.strip()]
                 if len(names) == 2:

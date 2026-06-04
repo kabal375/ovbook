@@ -62,18 +62,20 @@ def convert(
 
     if fmt == "pdf":
         from ovbook.extract import extract, get_metadata
-        from ovbook.split import split_into_chunks
+        from ovbook.split import split_into_chunks, filter_content
 
         markdown = extract(input)
         book_meta = get_metadata(input)
         chunks = split_into_chunks(markdown)
+        chunks = filter_content(chunks)
     elif fmt == "fb2":
         from ovbook.extract import extract_fb2, get_fb2_metadata
-        from ovbook.split import split_into_chunks
+        from ovbook.split import split_into_chunks, filter_content
 
         markdown = extract_fb2(input)
         book_meta = get_fb2_metadata(input)
         chunks = split_into_chunks(markdown)
+        chunks = filter_content(chunks)
     else:
         typer.echo(f"Error: unsupported format '{fmt}' (supported: pdf, fb2)", err=True)
         raise typer.Exit(1)

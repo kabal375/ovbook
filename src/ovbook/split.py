@@ -133,3 +133,35 @@ def split_into_chunks(markdown: str) -> list[Chunk]:
 
     _enrich_chunks(chunks)
     return chunks
+
+
+_CONTENT_START_RE = re.compile(
+    r"^(?:CHAPTER|Part|Appendix)\s",
+    re.IGNORECASE,
+)
+_CONTENT_END_RE = re.compile(r"^Index$|^Where to Go Next$", re.IGNORECASE)
+
+
+def filter_content(chunks: list[Chunk]) -> list[Chunk]:
+    """Remove front matter (before first Chapter/Part/Appendix) and index (from 'Index' onward)."""
+    if not chunks:
+        return []
+
+    # Find content start
+    start = 0
+    for i, c in enumerate(chunks):
+        if _CONTENT_START_RE.match(c.heading):
+            start = i
+            break
+    else:
+        # No content boundary found — return all
+        return chunks
+
+    # Find content end (Index)
+    end = len(chunks)
+    for i, c in enumerate(chunks[start:], start=start):
+        if _CONTENT_END_RE.match(c.heading):
+            end = i
+            break
+
+    return chunks[start:end]

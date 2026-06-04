@@ -18,6 +18,37 @@ def make_slug(text: str, max_len: int = 60) -> str:
     return slug[:max_len] if slug else "untitled"
 
 
+# Matches bare "CHAPTER 1", "Chapter 3", "ГЛАВА 2" — no descriptive suffix.
+_BARE_CHAPTER_RE = re.compile(
+    r"^(?:CHAPTER|Chapter|Глава|ГЛАВА|SECTION|Section)\s+\d+\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _resolve_chapter_title(chunk: Chunk) -> str:
+    """Return the best available chapter title for a chunk.
+
+    PDFs often use bare "CHAPTER 1" as the heading, with the real title
+    ("Revolution in the Cloud") as the first line of body text.
+    This function returns that first content line when the heading is bare,
+    falling back to the heading itself if content is empty or too long.
+    """
+    heading = chunk.heading.strip()
+
+    # Heading already has descriptive content — use it directly.
+    if not _BARE_CHAPTER_RE.match(heading):
+        return heading
+
+    # Bare "CHAPTER N" — look for descriptive title in first content line.
+    if chunk.content:
+        for line in chunk.content.split("\n"):
+            stripped = line.strip()
+            if stripped and len(stripped) <= 80:
+                return stripped
+
+    return heading
+
+
 # ── PDF path: depth-guarded chapter files ────────────────────────────────────
 
 
@@ -29,15 +60,13 @@ def write_chapter_groups(
 ) -> None:
     """Write depth-guarded output: one .md file per chapter.
 
-    All subsections are embedded as ## headings inside the chapter file,
-    not written as separate files. Keeps the library navigable while
-    providing context-rich chunks for indexing.
+    All subsections are embedded as ## headings inside the chapter file.
 
     Structure:
         book-slug/
             00-book.md
-            01-<chapter-slug>.md
-            02-<chapter-slug>.md
+            01-<chapter-title-slug>.md
+            02-<chapter-title-slug>.md
     """
     book_id = book_meta.get("id", book_slug)
     book_dir = output_dir / book_slug
@@ -46,7 +75,8 @@ def write_chapter_groups(
     (book_dir / "00-book.md").write_text(make_book_frontmatter(book_meta))
 
     for seq, group in enumerate(groups, start=1):
-        chapter_slug = make_slug(group.chapter_title)
+        title = _resolve_chapter_title(group.chunks[0])
+        chapter_slug = make_slug(title)
         chapter_file = book_dir / f"{seq:02d}-{chapter_slug}.md"
         _write_chapter_file(chapter_file, group, book_id, seq)
 
@@ -58,11 +88,12 @@ def _write_chapter_file(path: Path, group: ChapterGroup, book_id: str, seq: int)
     (subsections) are appended as ## headings with their body text.
     """
     chapter_chunk = group.chunks[0]
+    resolved_title = _resolve_chapter_title(chapter_chunk)
 
     front_meta: dict = {
         "book_id": book_id,
         "chapter_no": group.chapter_no,
-        "chapter_title": group.chapter_title,
+        "chapter_title": resolved_title,
         "sequence": seq,
     }
     if chapter_chunk.part:

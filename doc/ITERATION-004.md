@@ -224,6 +224,19 @@ cloud-native-devops-with-kubernetes/
 
 ---
 
+### 11. `_resolve_chapter_title` — дескриптивные названия глав
+
+**Файл:** `src/ovbook/writer.py`
+
+**Проблема:** PDF-книги часто используют bare "CHAPTER 1" как heading, а реальное
+название главы ("Revolution in the Cloud") — первая строка body-текста. Файлы
+назывались `01-chapter-1.md`.
+
+**Фикс:** `_resolve_chapter_title()` — если heading — bare "CHAPTER N" (или
+"ГЛАВА N", "Section N"), то первая непустая строка ≤80 символов из content
+становится названием. Результат: `01-chapter-1-revolution-in-the-cloud.md`,
+`chapter_title` в frontmatter — "Revolution in the Cloud".
+
 ## Известные ограничения (не входят в эту итерацию)
 
 - `fibre-channel-protocol-for-scsi-fourth-version-fcp-4` — технический стандарт

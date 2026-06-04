@@ -33,9 +33,63 @@ class Chunk:
     section_title: str = ""
     part: str = ""
     sequence_str: str = ""
+    # Scoring metadata
+    font_size: float = 0.0
+    is_bold: bool = False
+    near_drawing: bool = False
+    looks_like_toc_entry: bool = False
+    looks_like_index_letter: bool = False
+    page_type: str = "body"  # body / toc / index / front-matter / appendix / diagram
+    score: float = 0.0
 
     def __post_init__(self):
         self.content = self.content.strip()
+
+
+def score_heading(c: Chunk, body_font_size: float) -> float:
+    """Score a Chunk candidate for being a real heading.
+
+    Positive signals: chapter keyword, numbered heading, larger font, bold.
+    Negative signals: too short, TOC dots, near drawing, index letter.
+    """
+    s = 0.0
+    text = c.heading.strip()
+
+    # --- Negative signals ---
+    if len(text) < 4:
+        s -= 5
+    # TOC entry: leader dots + optional page number at end
+    if re.search(r"\.{3,}\s*\d*\s*$", text):
+        s -= 8
+    if re.match(r"\.{3,}", text):
+        s -= 8  # pure dots line
+    # Pure index letter (single uppercase or single char with page numbers following)
+    if re.match(r"^[A-ZА-Я]$", text) or re.match(r"^[A-Z],\s*[A-Z]$", text):
+        if c.level >= 2:
+            s -= 8
+    # Paragraph symbol or random chart artifact
+    if re.match(r"^[\W_]+$", text):
+        s -= 10
+
+    # --- Positive signals ---
+    if re.match(r"^(chapter|part|appendix|lecture|lesson|module)\b", text, re.IGNORECASE):
+        s += 6
+    if re.match(r"^\d+(\.\d+)*\s+\S+", text):
+        s += 5
+    if c.font_size >= body_font_size * 1.18:
+        s += 3
+    if c.is_bold:
+        s += 2
+
+    # --- Pre-computed flags ---
+    if c.near_drawing:
+        s -= 6
+    if c.looks_like_toc_entry:
+        s -= 10
+    if c.looks_like_index_letter:
+        s -= 8
+
+    return s
 
 
 def _enrich_chunks(chunks: list[Chunk]) -> None:

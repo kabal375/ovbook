@@ -1,4 +1,34 @@
-from ovbook.split import split_into_chunks
+from ovbook.split import split_into_chunks, score_heading, Chunk
+
+
+def test_score_heading_scores_correctly():
+    """Verify score_heading() assigns correct scores for various inputs."""
+    body_size = 12.0
+
+    # Chapter heading — strong positive
+    ch = Chunk(heading="Chapter 1: Introduction", content="", level=2, font_size=20.0, is_bold=True)
+    s = score_heading(ch, body_size)
+    assert s >= 8, f"Chapter heading should score high, got {s}"
+
+    # TOC entry — strong negative
+    toc = Chunk(heading="Chapter 1: Introduction......................1", content="", level=2, font_size=12.0)
+    s = score_heading(toc, body_size)
+    assert s <= 0, f"TOC entry should score low or negative, got {s}"
+
+    # Index letter — negative
+    idx = Chunk(heading="A", content="", level=2, font_size=14.0)
+    s = score_heading(idx, body_size)
+    assert s <= 0, f"Index letter should score negative, got {s}"
+
+    # Short heading (diagram noise) — negative
+    short = Chunk(heading="x", content="", level=2, font_size=18.0)
+    s = score_heading(short, body_size)
+    assert s < 0, f"Short heading should be negative, got {s}"
+
+    # Numbered heading — strong positive even if font not huge
+    numbered = Chunk(heading="1 Scope", content="", level=2, font_size=13.0)
+    s = score_heading(numbered, body_size)
+    assert s >= 3, f"Numbered heading should score positive, got {s}"
 
 
 def test_split_basic():

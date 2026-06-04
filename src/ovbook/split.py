@@ -4,10 +4,20 @@ from dataclasses import dataclass
 import re
 
 
-_PART_RE = re.compile(r"^Part\s+\w+", re.IGNORECASE)
-_CHAPTER_RE = re.compile(r"(?:CHAPTER|Chapter)\s*(\d+)")
-_SECTION_RE = re.compile(r"(?:Section|SECTION)\s*(\d+)")
-_SECTION_NUM_RE = re.compile(r"^(\d+)[.)]\s+")
+_PART_RE = re.compile(r"^(?:Part|Часть|Том|Book|Книга)\s+\w+", re.IGNORECASE)
+# H2‑level: leading digit (1. / 2 / 4) or keyword + digit (Chapter 5 / Глава 3)
+_H2_NUM_RE = re.compile(r"^(?:(\d+)[.)\s]|(?:Chapter|Глава|Section|Chapitre|Kapitel|Lecture|Параграф)\s+(\d+))\s*", re.IGNORECASE)
+# H3‑level: X.Y (4.1) or keyword + X.Y (Section 4.1 / Параграф 4.1)
+_H3_NUM_RE = re.compile(
+    r"^(?:"
+    r"(\d+)\.(\d+)"                           # 4.1
+    r"|"
+    r"(?:Section|Параграф|Paragraf|Paragraph)\s+(\d+)\.(\d+)"  # Section 4.1
+    r"|"
+    r"(?:Section|Параграф|Paragraf|Paragraph)\s+(\d+)"          # Section 4
+    r")",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -29,10 +39,16 @@ class Chunk:
 
 
 def _enrich_chunks(chunks: list[Chunk]) -> None:
-    """Assign hierarchy metadata (chapter_no, section_no, part, sequence_str)."""
+    """Assign hierarchy metadata (chapter_no, section_no, part, sequence_str).
+
+    H2 headings: extract number from leading digit or keyword.
+    H3 headings: extract X.Y number or sequential position.
+    Unnumbered headings get sequential numbering.
+    """
     current_part = ""
     current_chapter_no = 0
     current_chapter_title = ""
+    chapter_counter = 0
     section_counter = 0
 
     for chunk in chunks:
@@ -41,10 +57,18 @@ def _enrich_chunks(chunks: list[Chunk]) -> None:
             current_part = chunk.part
         chunk.part = current_part
 
-        # Detect Chapter
-        m = _CHAPTER_RE.search(chunk.heading)
-        if m:
-            current_chapter_no = int(m.group(1))
+        # Detect Chapter (H2)
+        if chunk.level == 2:
+            m = _H2_NUM_RE.match(chunk.heading)
+            if m:
+                # First group from leading digit, second from keyword+digit
+                num = m.group(1) or m.group(2)
+                current_chapter_no = int(num)
+                chapter_counter = current_chapter_no
+            else:
+                # No number found — sequential fallback
+                chapter_counter += 1
+                current_chapter_no = chapter_counter
             current_chapter_title = chunk.heading
             section_counter = 0
 
@@ -53,15 +77,27 @@ def _enrich_chunks(chunks: list[Chunk]) -> None:
 
         # Detect Section (H3)
         if chunk.level == 3:
-            sm = _SECTION_RE.search(chunk.heading)
-            if sm:
-                chunk.section_no = int(sm.group(1))
-            else:
-                # Try leading number pattern: "### 2. Section title" or "### 3) Title"
-                nm = _SECTION_NUM_RE.match(chunk.heading)
-                if nm:
-                    chunk.section_no = int(nm.group(1))
+            m = _H3_NUM_RE.match(chunk.heading)
+            if m:
+                if m.group(5):
+                    # Section 4 — keyword + single digit
+                    chunk.section_no = int(m.group(5))
                 else:
+                    # X.Y pattern — extract chapter and section
+                    ch = m.group(1) or m.group(3)
+                    sec = m.group(2) or m.group(4)
+                    chunk.section_no = int(sec)
+                    section_ch = int(ch)
+                    if section_ch != current_chapter_no:
+                        current_chapter_no = section_ch
+                        chunk.chapter_no = current_chapter_no
+            else:
+                # Try simple leading number "### 2. Section" or "### 3) Title"
+                sn = re.match(r"^(\d+)[.)]\s+", chunk.heading)
+                if sn:
+                    chunk.section_no = int(sn.group(1))
+                else:
+                    # No explicit number — sequential within chapter
                     section_counter += 1
                     chunk.section_no = section_counter
             chunk.section_title = chunk.heading
@@ -142,6 +178,18 @@ _CONTENT_START_RE = re.compile(
 _CONTENT_END_RE = re.compile(r"^Index$|^Where to Go Next$", re.IGNORECASE)
 
 
+def _is_content_start(heading: str) -> bool:
+    """Check if heading signals start of real content.
+
+    Triggers: keyword (CHAPTER/Part/Appendix) or leading number (1. / 2 / 3).
+    """
+    if _CONTENT_START_RE.match(heading):
+        return True
+    if re.match(r"^\d+[.)\s]", heading):
+        return True
+    return False
+
+
 def filter_content(chunks: list[Chunk]) -> list[Chunk]:
     """Remove front matter (before first Chapter/Part/Appendix) and index (from 'Index' onward)."""
     if not chunks:
@@ -150,7 +198,7 @@ def filter_content(chunks: list[Chunk]) -> list[Chunk]:
     # Find content start
     start = 0
     for i, c in enumerate(chunks):
-        if _CONTENT_START_RE.match(c.heading):
+        if _is_content_start(c.heading):
             start = i
             break
     else:

@@ -58,12 +58,12 @@ def test_part_resets_chapter_count():
 
 
 def test_no_part_no_chapter_regex():
-    """Headings without 'Chapter' pattern → chapter_no stays 0."""
+    """Headings without numbers → sequential chapter_no (1, 2, 3…)."""
     md = "# Book\n\n## Introduction\n\nSome text\n\n## Summary\n\nFinal"
     chunks = split_into_chunks(md)
     assert len(chunks) == 2
-    assert chunks[0].chapter_no == 0
-    assert chunks[1].chapter_no == 0
+    assert chunks[0].chapter_no == 1
+    assert chunks[1].chapter_no == 2
 
 
 def test_chapter_title_stored():

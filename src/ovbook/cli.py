@@ -68,15 +68,41 @@ def convert(
     Writes a chunk tree suitable for OpenViking watch indexing.
     """
     fmt = format or input.suffix.lstrip(".").lower()
+    groups: list = []
 
     if fmt == "pdf":
-        from ovbook.extract import extract, get_metadata
-        from ovbook.split import split_into_chunks, filter_content
+        from ovbook.extract import get_metadata, extract_pdf_rich
+        from ovbook.split import filter_toc_chunks, filter_low_score_chunks, group_chunks_by_chapter, score_heading
+        from ovbook.profile import detect_profile
 
-        markdown = extract(input)
+        # Document profile
+        profile = detect_profile(input)
+        body_size = profile["body_size"]
+
+        # Rich extraction with scoring metadata
+        raw_chunks = extract_pdf_rich(input)
+
+        # Re-score with profile body_size for consistency
+        for c in raw_chunks:
+            c.score = score_heading(c, body_size)
+
+        # Filter noise
+        raw_chunks = filter_toc_chunks(raw_chunks)
+        raw_chunks = filter_low_score_chunks(raw_chunks, min_score=0.0)
+
+        # Group by chapter (depth guard)
+        chunks = []
+        groups = group_chunks_by_chapter(raw_chunks, min_chapter_score=5.0)
+        for g in groups:
+            chunks.extend(g.chunks)
+
         book_meta = get_metadata(input)
-        chunks = split_into_chunks(markdown)
-        chunks = filter_content(chunks)
+
+        if not profile["encoding_ok"]:
+            typer.echo(
+                f"Warning: Encoding issues detected — consider OCR pipeline",
+                err=True,
+            )
     elif fmt == "fb2":
         from ovbook.extract import extract_fb2, get_fb2_metadata
         from ovbook.split import split_into_chunks, filter_content
@@ -98,25 +124,48 @@ def convert(
         book_meta["edition"] = edition
 
     if dry_run:
-        typer.echo(f"Book: {book_meta.get('title', input.name)}")
-        if book_meta.get("authors"):
-            typer.echo(f"Authors: {', '.join(book_meta['authors'])}")
-        if book_meta.get("domains"):
-            typer.echo(f"Domains: {', '.join(book_meta['domains'])}")
-        if book_meta.get("topics"):
-            typer.echo(f"Topics: {', '.join(book_meta['topics'])}")
-        typer.echo(f"Chunks: {len(chunks)}")
-        for c in chunks:
-            preview = c.content[:80].replace("\n", " ").strip()
-            typer.echo(f"  [{c.sequence + 1:02d}] {c.heading}")
-            if preview:
-                typer.echo(f"       {preview}...")
+        if fmt == "pdf":
+            typer.echo(f"Book: {book_meta.get('title', input.name)}")
+            if book_meta.get("authors"):
+                typer.echo(f"Authors: {', '.join(book_meta['authors'])}")
+            if book_meta.get("domains"):
+                typer.echo(f"Domains: {', '.join(book_meta['domains'])}")
+            if book_meta.get("topics"):
+                typer.echo(f"Topics: {', '.join(book_meta['topics'])}")
+            total = sum(len(g.chunks) for g in groups)
+            typer.echo(f"Chapters: {len(groups)}")
+            typer.echo(f"Chunks: {total}")
+            for g in groups:
+                for c in g.chunks:
+                    preview = c.content[:80].replace("\n", " ").strip()
+                    typer.echo(f"  [{c.sequence + 1:02d}] {c.heading}")
+                    if preview:
+                        typer.echo(f"       {preview}...")
+        else:
+            typer.echo(f"Book: {book_meta.get('title', input.name)}")
+            if book_meta.get("authors"):
+                typer.echo(f"Authors: {', '.join(book_meta['authors'])}")
+            if book_meta.get("domains"):
+                typer.echo(f"Domains: {', '.join(book_meta['domains'])}")
+            if book_meta.get("topics"):
+                typer.echo(f"Topics: {', '.join(book_meta['topics'])}")
+            typer.echo(f"Chunks: {len(chunks)}")
+            for c in chunks:
+                preview = c.content[:80].replace("\n", " ").strip()
+                typer.echo(f"  [{c.sequence + 1:02d}] {c.heading}")
+                if preview:
+                    typer.echo(f"       {preview}...")
         return
 
-    from ovbook.writer import write_chunks
+    from ovbook.writer import write_chapter_groups, write_chunks
 
     slug = slugify(book_meta.get("title", input.stem))
-    output_path = output / slug
-    output_path.mkdir(parents=True, exist_ok=True)
-    write_chunks(output_path, book_meta, chunks)
-    typer.echo(f"Written {len(chunks)} chunks to {output_path}")
+    if fmt == "pdf":
+        write_chapter_groups(output, groups, book_meta, slug)
+        total = sum(len(g.chunks) for g in groups)
+        typer.echo(f"Written {total} chunks to {output / slug}")
+    else:
+        output_path = output / slug
+        output_path.mkdir(parents=True, exist_ok=True)
+        write_chunks(output_path, book_meta, chunks)
+        typer.echo(f"Written {len(chunks)} chunks to {output_path}")

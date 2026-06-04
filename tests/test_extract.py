@@ -3,6 +3,17 @@
 from pathlib import Path
 
 from ovbook.extract import extract_pdf, get_pdf_metadata
+from ovbook.profile import detect_profile
+
+
+def test_detect_profile_normal_pdf(pdf_fixture):
+    """detect_profile returns valid metadata for a normal PDF."""
+    profile = detect_profile(pdf_fixture)
+    assert "type" in profile
+    assert profile["type"] in ("born-digital", "diagram-heavy")
+    assert profile["body_size"] > 0
+    assert isinstance(profile["encoding_ok"], bool)
+    assert isinstance(profile["page_count"], int)
 
 
 def test_extract_pdf_returns_string(pdf_fixture):

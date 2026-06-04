@@ -5,7 +5,13 @@ import pytest
 
 
 def _generate_test_pdf(path: Path) -> None:
-    """Create a minimal PDF with title, chapter headings, sections."""
+    """Create a minimal PDF with title, chapter headings, sections.
+
+    Font: title=24pt, chapters=18pt, sections=14pt, body=11pt.
+    Body text is the most common size (6 pages × 2 blocks) → median ≈ 11pt.
+    18pt/11pt=1.64 ≥ 1.3 → chapter headings detected. 14pt/11pt=1.27 < 1.3
+    → section heading accumulated into chapter body.
+    """
     import fitz
 
     doc = fitz.open()
@@ -23,7 +29,7 @@ def _generate_test_pdf(path: Path) -> None:
         "It contains some technical content that should be extracted."
     ), fontsize=11)
 
-    # Page 3: section (H3)
+    # Page 3: section (H3, below heading threshold) + body
     page = doc.new_page()
     page.insert_textbox(fitz.Rect(72, 72, 540, 120), "Section 1.1: Getting Started", fontsize=14)
     page.insert_textbox(fitz.Rect(72, 140, 540, 400), (
@@ -36,6 +42,19 @@ def _generate_test_pdf(path: Path) -> None:
     page.insert_textbox(fitz.Rect(72, 140, 540, 400), (
         "Content for the advanced chapter. More complex concepts explained here."
     ), fontsize=11)
+
+    # Pages 5-7: extra body text to push median font size down to 11pt
+    for extra in range(3):
+        page = doc.new_page()
+        page.insert_textbox(fitz.Rect(72, 72, 540, 200), (
+            "This is additional body text to ensure the body font size detection "
+            "correctly identifies 11pt as the dominant size. Without enough body text "
+            "spans, the median gets skewed by heading fonts."
+        ), fontsize=11)
+        page.insert_textbox(fitz.Rect(72, 220, 540, 400), (
+            "More filler text that serves only to increase the count of 11pt font spans "
+            "so that _compute_body_size returns 11pt as the body baseline."
+        ), fontsize=11)
 
     doc.save(str(path))
     doc.close()

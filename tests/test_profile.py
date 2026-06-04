@@ -22,7 +22,7 @@ def test_body_size_positive(pdf_fixture):
 
 def test_page_count(pdf_fixture):
     profile = detect_profile(pdf_fixture)
-    assert profile["page_count"] == 4  # test PDF has 4 pages
+    assert profile["page_count"] == 7  # test PDF now has 7 pages
 
 
 def test_drawing_clusters_non_negative(pdf_fixture):

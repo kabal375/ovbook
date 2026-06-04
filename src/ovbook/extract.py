@@ -20,6 +20,36 @@ def extract_fb2(path: Path) -> str:
     return "\n".join(lines)
 
 
+def get_fb2_metadata(path: Path) -> dict:
+    """Extract book metadata (title, authors) from an FB2 file."""
+    tree = ET.parse(str(path))
+    root = tree.getroot()
+
+    title_info = root.find(f".//{FB2_NS}title-info")
+    if title_info is None:
+        return {"id": path.stem, "title": path.stem}
+
+    title_el = title_info.find(f"{FB2_NS}book-title")
+    title = _get_inner_text(title_el) if title_el is not None else path.stem
+
+    authors = []
+    for author_el in title_info.findall(f"{FB2_NS}author"):
+        first = author_el.findtext(f"{FB2_NS}first-name", default="")
+        last = author_el.findtext(f"{FB2_NS}last-name", default="")
+        name = f"{first} {last}".strip()
+        if name:
+            authors.append(name)
+
+    lang_el = root.findtext(f".//{FB2_NS}lang", default="en")
+
+    return {
+        "id": path.stem,
+        "title": title,
+        "authors": authors,
+        "language": lang_el,
+    }
+
+
 def _parse_element(el: ET.Element, lines: list[str], depth: int) -> None:
     """Recursively parse FB2 elements into markdown lines."""
     tag = el.tag

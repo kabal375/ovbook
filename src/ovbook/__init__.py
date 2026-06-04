@@ -1,1 +1,1 @@
-from ovbook import cli
+"""ovbook — convert books to structured markdown chunks for OpenViking."""

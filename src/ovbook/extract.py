@@ -1,6 +1,7 @@
 """Extract text from books (PDF primary, fb2 fallback) and convert to markdown."""
 
 from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 
 import fitz  # PyMuPDF
@@ -70,6 +71,129 @@ def extract_pdf(path: Path) -> str:
 
     doc.close()
     return "\n".join(lines)
+
+
+def _compute_body_size(doc: fitz.Document) -> float:
+    """Compute body font size as median of all span sizes."""
+    sizes: list[float] = []
+    for page in doc:
+        blocks = page.get_text("dict")["blocks"]
+        for block in blocks:
+            if block["type"] == 0:  # text
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        sizes.append(span["size"])
+        if len(sizes) > 200:
+            break
+    if not sizes:
+        return 12.0
+    sizes.sort()
+    return sizes[len(sizes) // 2]
+
+
+def _is_near_drawing(bbox, drawings, threshold: float = 20.0) -> bool:
+    """Check if bbox is near any drawing cluster."""
+    if not bbox or not drawings:
+        return False
+    for drawing in drawings:
+        if isinstance(drawing, (list, tuple)):
+            d_rect = fitz.Rect(drawing)
+        else:
+            d_rect = drawing
+        if hasattr(bbox, "distance_to"):
+            try:
+                if bbox.distance_to(d_rect) < threshold:
+                    return True
+            except Exception:
+                pass
+    return False
+
+
+def extract_pdf_rich(path: Path) -> list:
+    """Extract structured chunks from a PDF with rich metadata for scoring.
+
+    Returns list[Chunk] with font_size, is_bold, near_drawing, etc.
+    """
+    from .split import Chunk, score_heading
+
+    doc = fitz.open(str(path))
+    body_size = _compute_body_size(doc)
+
+    chunks: list[Chunk] = []
+    seq = 0
+
+    for page_num, page in enumerate(doc):
+        blocks = page.get_text("dict")["blocks"]
+        drawings = []
+        if hasattr(page, "cluster_drawings"):
+            try:
+                drawings = page.cluster_drawings()
+            except Exception:
+                pass
+
+        for block in blocks:
+            if block["type"] != 0:  # skip images
+                continue
+
+            for line in block["lines"]:
+                text_parts = []
+                max_size = 0.0
+                is_bold = False
+
+                for span in line["spans"]:
+                    text_parts.append(span["text"])
+                    max_size = max(max_size, span["size"])
+                    # Check font name for bold
+                    font = span.get("font", "")
+                    if "Bold" in font or "bold" in font or "Black" in font:
+                        is_bold = True
+                    # Check font flags (bit 2 = bold)
+                    if span.get("flags", 0) & 2:
+                        is_bold = True
+
+                text = "".join(text_parts).strip()
+                if not text:
+                    continue
+
+                # Determine if near drawing
+                bbox = fitz.Rect(line["bbox"]) if "bbox" in line else None
+                near_drawing = _is_near_drawing(bbox, drawings) if bbox and drawings else False
+
+                # Detect TOC entry: leader dots with optional page tail
+                looks_like_toc = bool(re.search(r"\.{3,}\s*\d*\s*$", text)) or bool(re.match(r"\.{3,}", text))
+
+                # Detect Index letter
+                looks_like_index = bool(re.match(r"^[A-ZА-Я]$", text)) or bool(re.match(r"^[A-Z],\s*[A-Z]$", text))
+
+                # Heading level by font size
+                level = 3  # default: body-level
+                if max_size >= body_size * 1.3:
+                    ratio = max_size / body_size
+                    if ratio >= 2.0:
+                        level = 1
+                    elif ratio >= 1.6:
+                        level = 2
+                    else:
+                        level = 3
+
+                chunk = Chunk(
+                    heading=text,
+                    content=text,
+                    level=level,
+                    sequence=seq,
+                    font_size=max_size,
+                    is_bold=is_bold,
+                    near_drawing=near_drawing,
+                    looks_like_toc_entry=looks_like_toc,
+                    looks_like_index_letter=looks_like_index,
+                )
+
+                chunk.score = score_heading(chunk, body_size)
+                chunks.append(chunk)
+                seq += 1
+
+    doc.close()
+    return chunks
 
 
 def get_pdf_metadata(path: Path) -> dict:

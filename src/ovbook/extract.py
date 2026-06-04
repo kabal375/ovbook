@@ -113,6 +113,8 @@ def extract_pdf_rich(path: Path) -> list:
     """Extract structured chunks from a PDF with rich metadata for scoring.
 
     Returns list[Chunk] with font_size, is_bold, near_drawing, etc.
+    Body-level text blocks are accumulated and attached to the nearest
+    preceding heading chunk as content.
     """
     from .split import Chunk, score_heading
 
@@ -121,6 +123,21 @@ def extract_pdf_rich(path: Path) -> list:
 
     chunks: list[Chunk] = []
     seq = 0
+    body_accumulator: list[str] = []
+
+    def flush_body():
+        """Attach accumulated body text to the most recent chunk, if any."""
+        nonlocal body_accumulator
+        if not body_accumulator:
+            return
+        body_text = "\n\n".join(b for b in body_accumulator if b.strip())
+        body_accumulator = []
+        if body_text and chunks:
+            prev = chunks[-1]
+            if prev.content:
+                prev.content += "\n\n" + body_text
+            else:
+                prev.content = body_text
 
     for page_num, page in enumerate(doc):
         blocks = page.get_text("dict")["blocks"]
@@ -159,12 +176,6 @@ def extract_pdf_rich(path: Path) -> list:
             if not text:
                 continue
 
-            # Split heading from body for heading-level blocks
-            lines = text.split("\n", 1)
-            first_line = lines[0].strip()
-            heading_text = ""
-            body_text = text
-
             # Determine if near drawing
             near_drawing = False
             if block_bbox and drawings:
@@ -177,9 +188,13 @@ def extract_pdf_rich(path: Path) -> list:
             # Detect Index letter
             looks_like_index = bool(re.match(r"^[A-ZА-Я]$", first_line)) or bool(re.match(r"^[A-Z],\s*[A-Z]$", first_line))
 
-            # Heading level by font size
-            level = 3  # default: body-level
-            if block_max_size >= body_size * 1.3:
+            # Decide: heading-level or body-level?
+            is_heading_level = block_max_size >= body_size * 1.3
+
+            if is_heading_level:
+                # Flush any accumulated body text before starting new chunk
+                flush_body()
+
                 ratio = block_max_size / body_size
                 if ratio >= 2.0:
                     level = 1
@@ -188,17 +203,17 @@ def extract_pdf_rich(path: Path) -> list:
                 else:
                     level = 3
 
-                # Split heading from body for heading-level blocks
-                if level < 3:
-                    heading_text = first_line.strip().replace("\x07", "").replace("\b", "")
-                    if len(lines) > 1:
-                        body_text = lines[1].strip()
-                    else:
-                        body_text = ""
+                # Split heading from body for H2+ level blocks
+                lines = text.split("\n", 1)
+                heading_text = first_line.strip().replace("\x07", "").replace("\b", "")
+                if level < 3 and len(lines) > 1:
+                    body_text = lines[1].strip()
+                else:
+                    body_text = ""
 
                 chunk = Chunk(
                     heading=heading_text,
-                    content=body_text if heading_text else text,
+                    content=body_text or "",
                     level=level,
                     sequence=seq,
                     font_size=block_max_size,
@@ -211,6 +226,12 @@ def extract_pdf_rich(path: Path) -> list:
                 chunk.score = score_heading(chunk, body_size)
                 chunks.append(chunk)
                 seq += 1
+            else:
+                # Body-level block — accumulate for attaching to preceding heading
+                body_accumulator.append(text)
+
+    # Flush remaining body text
+    flush_body()
 
     doc.close()
     return chunks

@@ -81,11 +81,23 @@ def get_pdf_metadata(path: Path) -> dict:
     import re
     title = meta.get("title", path.stem)
     book_id = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+
+    # Extract year from creationDate (format: D:20220315184501Z)
+    year = None
+    cdate = meta.get("creationDate", "")
+    if cdate:
+        ym = re.search(r"D:(\d{4})", cdate)
+        if ym:
+            year = int(ym.group(1))
+
     result: dict = {
         "id": book_id,
         "title": title,
         "authors": [],
         "language": meta.get("language", "en"),
+        "year": year,
+        "source_format": "pdf",
+        "book_type": "technical",
     }
 
     author = meta.get("author", "")

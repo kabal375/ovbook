@@ -52,6 +52,15 @@ def convert(
         "--dry-run",
         help="Show chunk structure without writing files",
     ),
+    domain: list[str] = typer.Option(
+        [], "--domain", help="Book domain (can be repeated)")
+    ,
+    topic: list[str] = typer.Option(
+        [], "--topic", help="Book topic (can be repeated)")
+    ,
+    edition: str = typer.Option(
+        None, "--edition", help="Book edition (e.g. '2nd')"
+    ),
 ):
     """Convert a book file into structured markdown chunks for OpenViking.
 
@@ -80,10 +89,22 @@ def convert(
         typer.echo(f"Error: unsupported format '{fmt}' (supported: pdf, fb2)", err=True)
         raise typer.Exit(1)
 
+    # Merge CLI metadata
+    if domain:
+        book_meta["domains"] = domain
+    if topic:
+        book_meta["topics"] = topic
+    if edition:
+        book_meta["edition"] = edition
+
     if dry_run:
         typer.echo(f"Book: {book_meta.get('title', input.name)}")
         if book_meta.get("authors"):
             typer.echo(f"Authors: {', '.join(book_meta['authors'])}")
+        if book_meta.get("domains"):
+            typer.echo(f"Domains: {', '.join(book_meta['domains'])}")
+        if book_meta.get("topics"):
+            typer.echo(f"Topics: {', '.join(book_meta['topics'])}")
         typer.echo(f"Chunks: {len(chunks)}")
         for c in chunks:
             preview = c.content[:80].replace("\n", " ").strip()

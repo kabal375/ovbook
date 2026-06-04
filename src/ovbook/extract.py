@@ -1,21 +1,113 @@
-"""Extract text from fb2 format and convert to markdown."""
+"""Extract text from books (PDF primary, fb2 fallback) and convert to markdown."""
 
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+import fitz  # PyMuPDF
+
 FB2_NS = "{http://www.gribuser.ru/xml/fictionbook/2.0}"
+
+# --- PDF extraction (primary) ---
+
+
+def extract_pdf(path: Path) -> str:
+    """Extract structured markdown from a PDF using font-size heuristics."""
+    doc = fitz.open(str(path))
+    lines: list[str] = []
+    body_sizes: list[float] = []
+
+    # First pass: sample font sizes to determine body text baseline
+    for page in doc:
+        blocks = page.get_text("dict")["blocks"]
+        for block in blocks:
+            if block["type"] == 0:  # text
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        body_sizes.append(span["size"])
+        if len(body_sizes) > 50:
+            break
+
+    if not body_sizes:
+        return ""
+
+    # Determine body text size (most common size)
+    from collections import Counter
+    size_counter = Counter(round(s, 1) for s in body_sizes)
+    body_size = size_counter.most_common(1)[0][0]
+
+    # Second pass: extract text with heading detection
+    for page_num, page in enumerate(doc):
+        blocks = page.get_text("dict")["blocks"]
+        for block in blocks:
+            if block["type"] == 0:  # text block
+                for line in block["lines"]:
+                    text_parts = []
+                    max_size = 0
+                    for span in line["spans"]:
+                        text_parts.append(span["text"])
+                        max_size = max(max_size, span["size"])
+
+                    text = "".join(text_parts).strip()
+                    if not text:
+                        continue
+
+                    # Heading detection: font significantly larger than body
+                    if max_size >= body_size * 1.3:
+                        # Determine heading level by size ratio
+                        ratio = max_size / body_size
+                        if ratio >= 2.0:
+                            level = 1
+                        elif ratio >= 1.6:
+                            level = 2
+                        else:
+                            level = 3
+                        prefix = "#" * level
+                        lines.append(f"{prefix} {text}")
+                        lines.append("")
+                    else:
+                        lines.append(text)
+                        lines.append("")
+
+    doc.close()
+    return "\n".join(lines)
+
+
+def get_pdf_metadata(path: Path) -> dict:
+    """Extract book metadata from PDF metadata."""
+    doc = fitz.open(str(path))
+    meta = doc.metadata
+    doc.close()
+
+    result: dict = {
+        "id": path.stem,
+        "title": meta.get("title", path.stem),
+        "authors": [],
+        "language": meta.get("language", "en"),
+    }
+
+    author = meta.get("author", "")
+    if author:
+        # Split multiple authors by common delimiters
+        import re
+        for a in re.split(r"[;,/]| and ", author):
+            a = a.strip()
+            if a:
+                result["authors"].append(a)
+
+    return result
+
+
+# --- FB2 extraction (fallback) ---
 
 
 def extract_fb2(path: Path) -> str:
     """Parse an FB2 file and return its content as structured markdown."""
     tree = ET.parse(str(path))
     root = tree.getroot()
-
     body = root.find(f".//{FB2_NS}body")
     if body is None:
         raise ValueError("No <body> found in fb2")
-
-    lines = []
+    lines: list[str] = []
     _parse_element(body, lines, 0)
     return "\n".join(lines)
 
@@ -24,7 +116,6 @@ def get_fb2_metadata(path: Path) -> dict:
     """Extract book metadata (title, authors) from an FB2 file."""
     tree = ET.parse(str(path))
     root = tree.getroot()
-
     title_info = root.find(f".//{FB2_NS}title-info")
     if title_info is None:
         return {"id": path.stem, "title": path.stem}
@@ -32,7 +123,7 @@ def get_fb2_metadata(path: Path) -> dict:
     title_el = title_info.find(f"{FB2_NS}book-title")
     title = _get_inner_text(title_el) if title_el is not None else path.stem
 
-    authors = []
+    authors: list[str] = []
     for author_el in title_info.findall(f"{FB2_NS}author"):
         first = author_el.findtext(f"{FB2_NS}first-name", default="")
         last = author_el.findtext(f"{FB2_NS}last-name", default="")
@@ -41,20 +132,37 @@ def get_fb2_metadata(path: Path) -> dict:
             authors.append(name)
 
     lang_el = root.findtext(f".//{FB2_NS}lang", default="en")
+    return {"id": path.stem, "title": title, "authors": authors, "language": lang_el}
 
-    return {
-        "id": path.stem,
-        "title": title,
-        "authors": authors,
-        "language": lang_el,
-    }
+
+def extract(path: Path) -> str:
+    """Auto-detect format and extract structured markdown."""
+    fmt = path.suffix.lstrip(".").lower()
+    if fmt == "pdf":
+        return extract_pdf(path)
+    elif fmt == "fb2":
+        return extract_fb2(path)
+    else:
+        raise ValueError(f"Unsupported format: {fmt}")
+
+
+def get_metadata(path: Path) -> dict:
+    """Auto-detect format and extract book metadata."""
+    fmt = path.suffix.lstrip(".").lower()
+    if fmt == "pdf":
+        return get_pdf_metadata(path)
+    elif fmt == "fb2":
+        return get_fb2_metadata(path)
+    else:
+        return {"id": path.stem, "title": path.stem}
+
+
+# --- FB2 internals ---
 
 
 def _parse_element(el: ET.Element, lines: list[str], depth: int) -> None:
-    """Recursively parse FB2 elements into markdown lines."""
     tag = el.tag
     local = tag.split("}")[-1] if "}" in tag else tag
-
     if local == "title":
         text = _get_inner_text(el)
         if text:
@@ -62,25 +170,22 @@ def _parse_element(el: ET.Element, lines: list[str], depth: int) -> None:
             lines.append(f"{prefix} {text}")
             lines.append("")
         return
-
     if local == "p":
         text = _get_inner_text(el)
         if text:
             lines.append(text)
             lines.append("")
         return
-
     for child in el:
         _parse_element(child, lines, depth + 1 if local == "section" else depth)
 
 
 def _get_inner_text(el: ET.Element) -> str:
-    """Get all text content from an element, stripping whitespace."""
-    parts = []
+    parts: list[str] = []
     if el.text:
         parts.append(el.text.strip())
     for child in el:
-        if child.tag == f"{FB2_NS}p" or child.tag == "p":
+        if child.tag in (f"{FB2_NS}p", "p"):
             child_text = _get_inner_text(child)
             if child_text:
                 parts.append(child_text)

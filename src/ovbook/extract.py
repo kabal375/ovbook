@@ -129,12 +129,27 @@ def extract_pdf_rich(path: Path, body_size: float | None = None) -> list:
     seq = 0
     body_accumulator: list[str] = []
 
+    # Noise filters for body text (page numbers, running headers)
+    _PAGE_NUM_RE = re.compile(r"^\d+\s*$")
+    _RUNNING_HEADER_RE = re.compile(
+        r"^.{0,80}\|\s*\d+\s*$|^\d+\s*\|.{0,80}$"
+    )
+
+    def _filter_body_lines(lines: list[str]) -> list[str]:
+        """Remove page numbers and running headers from body text."""
+        return [
+            line for line in lines
+            if not _PAGE_NUM_RE.match(line)
+            and not _RUNNING_HEADER_RE.match(line)
+        ]
+
     def flush_body():
         """Attach accumulated body text to the most recent chunk, if any."""
         nonlocal body_accumulator
         if not body_accumulator:
             return
-        body_text = "\n\n".join(b for b in body_accumulator if b.strip())
+        filtered = _filter_body_lines(body_accumulator)
+        body_text = "\n\n".join(b for b in filtered if b.strip())
         body_accumulator = []
         if body_text and chunks:
             prev = chunks[-1]
@@ -237,7 +252,7 @@ def get_pdf_metadata(path: Path) -> dict:
     doc.close()
 
     # `or path.stem` handles both missing key and empty-string value in PDF metadata
-    title = meta.get("title") or path.stem
+    title = (meta.get("title") or path.stem).strip()
     book_id = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
 
     year = None

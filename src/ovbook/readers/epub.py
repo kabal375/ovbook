@@ -147,8 +147,14 @@ def _read_metadata(book, path: Path) -> dict:
         vals = book.get_metadata("DC", name)
         return vals[0][0] if vals else None
 
-    title = first("title") or path.stem
-    authors = [v[0] for v in book.get_metadata("DC", "creator")]
+    title = (first("title") or path.stem).strip()
+    raw_authors = [v[0] for v in book.get_metadata("DC", "creator")]
+    authors: list[str] = []
+    for raw in raw_authors:
+        if " and " in raw:
+            authors.extend(p.strip() for p in raw.split(" and ") if p.strip())
+        else:
+            authors.append(raw.strip())
     language = first("language") or "en"
 
     year = None

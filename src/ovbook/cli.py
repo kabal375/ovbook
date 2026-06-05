@@ -4,7 +4,8 @@ from pathlib import Path
 
 import typer
 
-from ovbook.writer import make_slug
+from ovbook.readers import get_reader
+from ovbook.writer import make_slug, write_chapter_groups
 
 
 app = typer.Typer(
@@ -24,7 +25,7 @@ def main(ctx: typer.Context):
 def convert(
     input: Path = typer.Argument(
         ...,
-        help="Path to input book file (.pdf / .fb2)",
+        help="Path to input book file (.pdf / .fb2 / .epub)",
         exists=True,
         file_okay=True,
         dir_okay=False,
@@ -34,122 +35,68 @@ def convert(
         None, "--format", "-f", help="Book format (auto-detect from extension)"
     ),
     output: Path = typer.Option(
-        Path.cwd(),
-        "--output",
-        "-o",
+        Path.cwd(), "--output", "-o",
         help="Output directory for chunk tree",
-        file_okay=False,
-        dir_okay=True,
+        file_okay=False, dir_okay=True,
     ),
     dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show chunk structure without writing files",
+        False, "--dry-run", help="Show chunk structure without writing files",
     ),
     domain: list[str] = typer.Option(
         [], "--domain", help="Book domain (can be repeated)"),
     topic: list[str] = typer.Option(
         [], "--topic", help="Book topic (can be repeated)"),
     edition: str = typer.Option(
-        None, "--edition", help="Book edition (e.g. '2nd')"
-    ),
+        None, "--edition", help="Book edition (e.g. '2nd')"),
 ):
     """Convert a book file into structured markdown chunks for OpenViking.
 
-    Detects format from file extension by default. Supports: pdf, fb2.
-    Writes a chunk tree suitable for OpenViking watch indexing.
+    Detects format from file extension by default. Supports: pdf, fb2, epub.
     """
     fmt = format or input.suffix.lstrip(".").lower()
-    groups: list = []
-    chunks: list = []
 
-    if fmt == "pdf":
-        from ovbook.extract import get_metadata, extract_pdf_rich
-        from ovbook.split import filter_toc_chunks, filter_low_score_chunks, group_chunks_by_chapter
-        from ovbook.profile import detect_profile
-
-        profile = detect_profile(input)
-        body_size = profile["body_size"]
-
-        # body_size passed in — extract_pdf_rich skips its own scan
-        raw_chunks = extract_pdf_rich(input, body_size=body_size)
-
-        raw_chunks = filter_toc_chunks(raw_chunks)
-        raw_chunks = filter_low_score_chunks(raw_chunks, min_score=-1.0)
-
-        groups = group_chunks_by_chapter(raw_chunks, min_chapter_score=7.0)
-        for g in groups:
-            chunks.extend(g.chunks)
-
-        book_meta = get_metadata(input)
-
-        if not profile["encoding_ok"]:
-            typer.echo(
-                "Warning: Encoding issues detected — consider OCR pipeline",
-                err=True,
-            )
-
-    elif fmt == "fb2":
-        from ovbook.extract import extract_fb2, get_fb2_metadata
-        from ovbook.split import split_into_chunks, filter_content
-
-        markdown = extract_fb2(input)
-        book_meta = get_fb2_metadata(input)
-        chunks = split_into_chunks(markdown)
-        chunks = filter_content(chunks)
-
-    else:
-        typer.echo(f"Error: unsupported format '{fmt}' (supported: pdf, fb2)", err=True)
+    try:
+        reader = get_reader(fmt)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
 
+    content = reader(input)
+    meta = content.meta
+    groups = content.groups
+
     if domain:
-        book_meta["domains"] = domain
+        meta["domains"] = domain
     if topic:
-        book_meta["topics"] = topic
+        meta["topics"] = topic
     if edition:
-        book_meta["edition"] = edition
+        meta["edition"] = edition
 
     if dry_run:
-        _print_dry_run(book_meta, groups if fmt == "pdf" else None, chunks)
+        _print_dry_run(meta, groups)
         return
 
-    from ovbook.writer import write_chapter_groups, write_chunks
-
-    slug = make_slug(book_meta.get("title", input.stem))
-    if fmt == "pdf":
-        write_chapter_groups(output, groups, book_meta, slug)
-        total = sum(len(g.chunks) for g in groups)
-        typer.echo(f"Written {total} chunks ({len(groups)} chapters) to {output / slug}")
-    else:
-        output_path = output / slug
-        output_path.mkdir(parents=True, exist_ok=True)
-        write_chunks(output_path, book_meta, chunks)
-        typer.echo(f"Written {len(chunks)} chunks to {output_path}")
+    slug = make_slug(meta.get("title", input.stem))
+    write_chapter_groups(output, groups, meta, slug)
+    total = sum(len(g.chunks) for g in groups)
+    typer.echo(f"Written {total} chunks ({len(groups)} chapters) to {output / slug}")
 
 
-def _print_dry_run(book_meta: dict, groups: list | None, chunks: list) -> None:
+def _print_dry_run(meta: dict, groups: list) -> None:
     """Print a dry-run summary of what would be written."""
-    typer.echo(f"Book: {book_meta.get('title', '(no title)')}")
-    if book_meta.get("authors"):
-        typer.echo(f"Authors: {', '.join(book_meta['authors'])}")
-    if book_meta.get("domains"):
-        typer.echo(f"Domains: {', '.join(book_meta['domains'])}")
-    if book_meta.get("topics"):
-        typer.echo(f"Topics: {', '.join(book_meta['topics'])}")
+    typer.echo(f"Book: {meta.get('title', '(no title)')}")
+    if meta.get("authors"):
+        typer.echo(f"Authors: {', '.join(meta['authors'])}")
+    if meta.get("domains"):
+        typer.echo(f"Domains: {', '.join(meta['domains'])}")
+    if meta.get("topics"):
+        typer.echo(f"Topics: {', '.join(meta['topics'])}")
 
-    if groups is not None:
-        total = sum(len(g.chunks) for g in groups)
-        typer.echo(f"Chapters: {len(groups)}")
-        typer.echo(f"Chunks: {total}")
-        for g in groups:
-            for c in g.chunks:
-                preview = c.content[:80].replace("\n", " ").strip()
-                typer.echo(f"  [{c.sequence + 1:02d}] {c.heading}")
-                if preview:
-                    typer.echo(f"       {preview}...")
-    else:
-        typer.echo(f"Chunks: {len(chunks)}")
-        for c in chunks:
+    total = sum(len(g.chunks) for g in groups)
+    typer.echo(f"Chapters: {len(groups)}")
+    typer.echo(f"Chunks: {total}")
+    for g in groups:
+        for c in g.chunks:
             preview = c.content[:80].replace("\n", " ").strip()
             typer.echo(f"  [{c.sequence + 1:02d}] {c.heading}")
             if preview:

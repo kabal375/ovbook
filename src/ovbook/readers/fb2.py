@@ -20,7 +20,7 @@ def _local(tag: str) -> str:
 
 
 def _slugify(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return re.sub(r"[^a-z0-9\u0430-\u044f]+", "-", text.lower()).strip("-")
 
 
 def _inline_text(el: ET.Element) -> str:

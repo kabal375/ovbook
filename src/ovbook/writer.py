@@ -9,7 +9,7 @@ from ovbook.split import Chunk, ChapterGroup
 
 def _slugify(text: str) -> str:
     """Convert heading text to a filesystem-safe slug."""
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return re.sub(r"[^a-z0-9\u0430-\u044f]+", "-", text.lower()).strip("-")
 
 
 def make_slug(text: str, max_len: int = 60) -> str:

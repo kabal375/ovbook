@@ -20,7 +20,7 @@ _H_RE = re.compile(r"^(#{1,6})\s+(.+)$")
 
 
 def _slugify(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return re.sub(r"[^a-z0-9\u0430-\u044f]+", "-", text.lower()).strip("-")
 
 
 def _to_markdown(html: str) -> str:

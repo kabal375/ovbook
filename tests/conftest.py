@@ -131,3 +131,86 @@ def rich_pdf_fixture(tmp_path_factory) -> Path:
     return path
 
 
+_FB2_CONTENT = """<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+  <description>
+    <title-info>
+      <book-title>FB2 Test Book</book-title>
+      <author><first-name>Jane</first-name><last-name>Doe</last-name></author>
+      <lang>en</lang>
+      <date>2021</date>
+    </title-info>
+  </description>
+  <body>
+    <section>
+      <title><p>Getting Started</p></title>
+      <p>Intro paragraph with <emphasis>emphasis</emphasis> and <code>snippet</code>.</p>
+      <empty-line/>
+      <p>Second intro paragraph.</p>
+      <section>
+        <title><p>Installation</p></title>
+        <p>Install steps with <strong>bold</strong> text.</p>
+      </section>
+    </section>
+    <section>
+      <title><p>Advanced Topics</p></title>
+      <p>Second chapter body.</p>
+    </section>
+  </body>
+</FictionBook>
+"""
+
+
+@pytest.fixture(scope="session")
+def fb2_fixture(tmp_path_factory) -> Path:
+    """Generate a structural FB2 test file."""
+    path = tmp_path_factory.mktemp("fixtures") / "test-book.fb2"
+    path.write_text(_FB2_CONTENT, encoding="utf-8")
+    return path
+
+
+def _generate_epub(path: Path) -> None:
+    from ebooklib import epub
+
+    book = epub.EpubBook()
+    book.set_identifier("epub-test-book")
+    book.set_title("EPUB Test Book")
+    book.set_language("en")
+    book.add_author("John Smith")
+    book.add_metadata("DC", "date", "2023-05-01")
+
+    c1 = epub.EpubHtml(title="Chapter One", file_name="c1.xhtml", lang="en")
+    c1.content = (
+        "<html><body>"
+        "<h1>Chapter One</h1>"
+        "<p>Intro text for chapter one.</p>"
+        "<h2>Section A</h2>"
+        "<p>Section A body.</p>"
+        "<pre><code>print('hello')</code></pre>"
+        "<ul><li>first item</li><li>second item</li></ul>"
+        "</body></html>"
+    )
+    c2 = epub.EpubHtml(title="Chapter Two", file_name="c2.xhtml", lang="en")
+    c2.content = "<html><body><h1>Chapter Two</h1><p>Second chapter body.</p></body></html>"
+    cover = epub.EpubHtml(title="Cover", file_name="cover.xhtml", lang="en")
+    cover.content = "<html><body><p>Cover page, not in TOC.</p></body></html>"
+
+    book.add_item(c1)
+    book.add_item(c2)
+    book.add_item(cover)
+    book.toc = (
+        epub.Link("c1.xhtml", "Chapter One", "c1"),
+        epub.Link("c2.xhtml", "Chapter Two", "c2"),
+    )
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.spine = [cover, c1, c2]
+    epub.write_epub(str(path), book)
+
+
+@pytest.fixture(scope="session")
+def epub_fixture(tmp_path_factory) -> Path:
+    """Generate a structural EPUB test file."""
+    path = tmp_path_factory.mktemp("fixtures") / "test-book.epub"
+    _generate_epub(path)
+    return path

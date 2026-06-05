@@ -106,3 +106,35 @@ def test_convert_with_all_metadata_flags(pdf_fixture, tmp_path):
 def test_convert_success_message_contains_written(pdf_fixture, tmp_path):
     result = runner.invoke(app, ["convert", str(pdf_fixture), "-o", str(tmp_path)])
     assert "Written" in result.output
+
+
+def test_convert_fb2_writes_chapter_files(fb2_fixture, tmp_path):
+    result = runner.invoke(app, ["convert", str(fb2_fixture), "-o", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    book_dir = next(d for d in tmp_path.iterdir() if d.is_dir())
+    assert (book_dir / "00-book.md").exists()
+    chapter_files = [
+        f for f in book_dir.iterdir()
+        if f.suffix == ".md" and f.name != "00-book.md"
+    ]
+    assert len(chapter_files) == 2
+    assert "book_id:" in chapter_files[0].read_text()
+
+
+def test_convert_epub_writes_chapter_files(epub_fixture, tmp_path):
+    result = runner.invoke(app, ["convert", str(epub_fixture), "-o", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    book_dir = next(d for d in tmp_path.iterdir() if d.is_dir())
+    assert (book_dir / "00-book.md").exists()
+    chapter_files = [
+        f for f in book_dir.iterdir()
+        if f.suffix == ".md" and f.name != "00-book.md"
+    ]
+    assert len(chapter_files) == 2
+
+
+def test_convert_fb2_dry_run(fb2_fixture):
+    result = runner.invoke(app, ["convert", str(fb2_fixture), "--dry-run"])
+    assert result.exit_code == 0
+    assert "FB2 Test Book" in result.output
+    assert "Chapters:" in result.output

@@ -90,25 +90,17 @@ def test_book_type_default(pdf_fixture):
     assert meta["book_type"] == "technical"
 
 
-def test_domains_propagate_to_chunks(tmp_path, pdf_fixture):
-    """Domains from book metadata propagate to chunk frontmatter."""
-    from ovbook.extract import extract
-    from ovbook.split import split_into_chunks, filter_content
-    from ovbook.writer import write_chunks
+def test_domains_written_to_book_card(tmp_path, pdf_fixture):
+    """--domain / --topic land in the book card frontmatter."""
+    from typer.testing import CliRunner
+    from ovbook.cli import app
 
-    md = extract(pdf_fixture)
-    chunks = split_into_chunks(md)
-    chunks = filter_content(chunks)
-
-    book_meta = {
-        "id": "test-book",
-        "title": "Test Book",
-        "domains": ["cloud-native"],
-        "topics": ["kubernetes"],
-    }
-    write_chunks(tmp_path / "test-book", book_meta, chunks)
-    # Check first chunk has domains
-    chunk_dir = sorted([d for d in (tmp_path / "test-book").iterdir() if d.is_dir()])[0]
-    chunk_file = list(chunk_dir.glob("*.md"))[0]
-    content = chunk_file.read_text()
-    assert "domains:" in content or True  # Check added later
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "convert", str(pdf_fixture), "-o", str(tmp_path),
+        "--domain", "cloud-native", "--topic", "kubernetes",
+    ])
+    assert result.exit_code == 0
+    card = next(tmp_path.rglob("00-book.md")).read_text()
+    assert "cloud-native" in card
+    assert "kubernetes" in card

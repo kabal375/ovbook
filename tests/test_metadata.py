@@ -5,47 +5,49 @@ from typer.testing import CliRunner
 from ovbook.cli import app
 
 
-def test_domain_flag(tmp_path, pdf_fixture):
+def test_domain_flag(tech_lib, pdf_fixture):
     """--domain adds domains to book metadata."""
     runner = CliRunner()
     result = runner.invoke(app, [
-        "convert", str(pdf_fixture), "-o", str(tmp_path),
-        "--domain", "cloud-native",
-        "--domain", "kubernetes",
+        "convert", str(pdf_fixture), "-o", str(tech_lib),
+        "--domain", "operating-systems",
+        "--domain", "devops-sre",
     ])
     assert result.exit_code == 0
-    book_dir = tmp_path / "test-book"
+    book_dir = tech_lib / "test-book"
     card = (book_dir / "00-book.md").read_text()
     assert "domains:" in card
-    assert "cloud-native" in card
-    assert "kubernetes" in card
+    assert "operating-systems" in card
+    assert "devops-sre" in card
 
 
-def test_topic_flag(tmp_path, pdf_fixture):
+def test_topic_flag(tech_lib, pdf_fixture):
     """--topic adds topics to book metadata."""
     runner = CliRunner()
     result = runner.invoke(app, [
-        "convert", str(pdf_fixture), "-o", str(tmp_path),
+        "convert", str(pdf_fixture), "-o", str(tech_lib),
+        "--domain", "operating-systems",
         "--topic", "containers",
         "--topic", "ci-cd",
     ])
     assert result.exit_code == 0
-    book_dir = tmp_path / "test-book"
+    book_dir = tech_lib / "test-book"
     card = (book_dir / "00-book.md").read_text()
     assert "topics:" in card
     assert "containers" in card
     assert "ci-cd" in card
 
 
-def test_edition_flag(tmp_path, pdf_fixture):
+def test_edition_flag(tech_lib, pdf_fixture):
     """--edition sets edition in book metadata."""
     runner = CliRunner()
     result = runner.invoke(app, [
-        "convert", str(pdf_fixture), "-o", str(tmp_path),
+        "convert", str(pdf_fixture), "-o", str(tech_lib),
+        "--domain", "operating-systems",
         "--edition", "2nd",
     ])
     assert result.exit_code == 0
-    book_dir = tmp_path / "test-book"
+    book_dir = tech_lib / "test-book"
     card = (book_dir / "00-book.md").read_text()
     assert "edition: 2nd" in card
 
@@ -90,17 +92,17 @@ def test_book_type_default(pdf_fixture):
     assert meta["book_type"] == "technical"
 
 
-def test_domains_written_to_book_card(tmp_path, pdf_fixture):
+def test_domains_written_to_book_card(tech_lib, pdf_fixture):
     """--domain / --topic land in the book card frontmatter."""
     from typer.testing import CliRunner
     from ovbook.cli import app
 
     runner = CliRunner()
     result = runner.invoke(app, [
-        "convert", str(pdf_fixture), "-o", str(tmp_path),
-        "--domain", "cloud-native", "--topic", "kubernetes",
+        "convert", str(pdf_fixture), "-o", str(tech_lib),
+        "--domain", "operating-systems", "--topic", "kubernetes",
     ])
     assert result.exit_code == 0
-    card = next(tmp_path.rglob("00-book.md")).read_text()
-    assert "cloud-native" in card
+    card = next(tech_lib.rglob("00-book.md")).read_text()
+    assert "operating-systems" in card
     assert "kubernetes" in card

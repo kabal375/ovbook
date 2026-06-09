@@ -22,12 +22,15 @@ def test_pdf_pipeline_roundtrip(tmp_path, pdf_fixture):
     assert "book_id:" in chapter_files[0].read_text()
 
 
-def test_cli_convert_pdf(pdf_fixture, tmp_path):
+def test_cli_convert_pdf(pdf_fixture, tech_lib):
     from typer.testing import CliRunner
     from ovbook.cli import app
 
     runner = CliRunner()
-    result = runner.invoke(app, ["convert", str(pdf_fixture), "-o", str(tmp_path)])
+    result = runner.invoke(app, [
+        "convert", str(pdf_fixture), "-o", str(tech_lib),
+        "--domain", "operating-systems",
+    ])
     assert result.exit_code == 0
     assert "Written" in result.output
-    assert (tmp_path / "test-book" / "00-book.md").exists()
+    assert (tech_lib / "test-book" / "00-book.md").exists()

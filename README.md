@@ -5,20 +5,57 @@ CLI-инструмент для конвертации книг (PDF / FB2 / EPU
 ## Usage
 
 ```bash
-uv run ovbook convert book.pdf  -o ~/ov-lib/tech-lib/
-uv run ovbook convert book.fb2  -o ~/ov-lib/tech-lib/
-uv run ovbook convert book.epub -o ~/ov-lib/tech-lib/
+uv run ovbook convert book.pdf  -o ~/ov-lib/tech-lib/ --domain operating-systems --topic scheduling
+uv run ovbook convert book.fb2  -o ~/ov-lib/tech-lib/ --domain software-development
+uv run ovbook convert book.epub -o ~/ov-lib/tech-lib/ --domain devops-sre
 ```
 
 Поддерживаемые форматы: **pdf** (детекция структуры по размеру шрифта),
 **fb2** и **epub** (структурный парсинг разметки — точнее, чем PDF).
 
 Опции:
-- `--dry-run` — только показать, что будет создано, без записи
+- `--dry-run` — только показать, что будет создано, без записи (режим исследования: классификация не требуется)
 - `-o, --output` — директория для результата (по умолч. текущая)
 - `-f, --format` — явно задать формат (по умолч. — по расширению)
-- `--domain` / `--topic` — теги книги (можно повторять)
+- `--domain` — домен книги из словаря коллекции, можно повторять (**обязателен** для записи)
+- `--topic` — тема книги, можно повторять (свободная форма, нормализуется в kebab-case)
 - `--edition` — издание (напр. `2nd`)
+- `--collection` — коллекция словаря (по умолч. — имя выходной директории, напр. `tech-lib`)
+
+## Классификация и controlled vocabulary
+
+Реальная запись **требует** валидной классификации: хотя бы один `--domain` из
+закрытого списка доменов коллекции. Список живёт как данные в ov-lib —
+`vocabulary.yaml` в корне репозитория, рядом с книгами:
+
+```yaml
+collections:
+  tech-lib:
+    domains:
+      - software-development
+      - operating-systems
+      - networks-protocols
+      - requirements-management
+      - devops-sre
+      - tools-applications
+      - hardware-systems
+    topics_registry: []
+```
+
+`ovbook` ищет `vocabulary.yaml`, поднимаясь вверх от `--output`. Правила:
+
+- **домены закрыты** — домен вне списка → ошибка (агент не может придумать домен;
+  новый домен добавляется только правкой `vocabulary.yaml` по запросу);
+- пустые домены при записи → ошибка (нельзя залить книгу без классификации);
+- нет `vocabulary.yaml` → ошибка (нечем валидировать);
+- **топики открыты** — свободная форма, валидируется только формат (kebab-case);
+- `--dry-run` — режим исследования: классификация не требуется, но переданный
+  домен всё равно валидируется, чтобы поймать ошибку до записи.
+
+Карточка `00-book.md` получает канонический frontmatter по схеме MVP
+(`id, title, authors, domains, topics, book_type, source_format, language,
+year, edition, status, priority`) с детерминированными значениями по умолчанию
+(`status: unread`, `priority: high`, `book_type: technical`).
 
 ## Output structure
 

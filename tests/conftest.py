@@ -1,7 +1,29 @@
 """Pytest fixtures for ovbook tests."""
 
 from pathlib import Path
+import textwrap
 import pytest
+
+
+@pytest.fixture
+def tech_lib(tmp_path) -> Path:
+    """A tech-lib output dir under a root holding a vocabulary.yaml.
+
+    Returns the output directory (``<root>/tech-lib``). Books written here
+    walk up to find the vocabulary at ``<root>/vocabulary.yaml``.
+    """
+    (tmp_path / "vocabulary.yaml").write_text(textwrap.dedent("""
+        collections:
+          tech-lib:
+            domains:
+              - software-development
+              - operating-systems
+              - devops-sre
+            topics_registry: []
+    """))
+    out = tmp_path / "tech-lib"
+    out.mkdir()
+    return out
 
 
 def _generate_test_pdf(path: Path) -> None:

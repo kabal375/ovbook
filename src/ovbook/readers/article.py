@@ -44,20 +44,24 @@ def _is_academic_heading(line: str) -> bool:
     stripped = line.strip()
     if len(stripped) > 40:
         return False
-    # Must be fully uppercase or start with uppercase for multi-word
-    if not stripped.isupper():
-        return False
-    return bool(_ACADEMIC_RE.match(stripped))
+    # Match exact all-caps headings
+    if stripped.isupper() and _ACADEMIC_RE.match(stripped):
+        return True
+    # Match CHAPTER + number (with or without space: CHAPTER1, CHAPTER 1)
+    if re.match(r"^CHAPTER\s*\d+$", stripped, re.IGNORECASE):
+        return True
+    # Match APPENDIX + letter (with or without space: APPENDIXA, APPENDIX A)
+    if re.match(r"^APPENDIX\s*[A-Z]$", stripped, re.IGNORECASE):
+        return True
+    return False
 
 
 # ── strategy 2: numbered sections ─────────────────────────────────────
 
 _NUMBERED_RE = re.compile(
-    r"^(\d+(?:\.\d+)*)[.)\s]{1,2}\s*([A-Z][A-Za-z\s/-]{3,45})$"
+    r"^(\d+)[.)\s]{1,2}\s*([A-Z][A-Za-z\s/-]{3,45})$"
 )
-# Only match if the text after the number is 4-45 chars starting with uppercase,
-# and the total line is under 80 chars, and the text looks like a heading
-# (no body-text words like 'for', 'the', 'there', 'this', 'that')
+# Only match FIRST-LEVEL numbered sections (no dots: "1 ", not "1.1 ")
 
 
 _BODY_TEXT_STARTS = {
@@ -125,12 +129,14 @@ def _find_headings(lines: list[str]) -> list[tuple[int, str]]:
         if _is_academic_heading(l):
             headings.append((i, l.strip().rstrip(":")))
 
-    # Strategy 2: numbered sections
-    for i, l in enumerate(lines):
-        if _is_numbered_heading(l):
-            m = _NUMBERED_RE.match(l.strip())
-            if m:
-                headings.append((i, m.group(0).strip()))
+    # Strategy 2: numbered sections (only if book is short — skip for full books)
+    # For books > 50 pages, numbered patterns are likely running headers or TOC
+    if len(lines) < 500:  # ~50 pages of average text
+        for i, l in enumerate(lines):
+            if _is_numbered_heading(l):
+                m = _NUMBERED_RE.match(l.strip())
+                if m:
+                    headings.append((i, m.group(0).strip()))
 
     # Deduplicate by index
     seen: set[int] = set()
@@ -139,7 +145,13 @@ def _find_headings(lines: list[str]) -> list[tuple[int, str]]:
         if idx not in seen:
             seen.add(idx)
             unique.append((idx, h))
-    return unique
+    # Deduplicate: merge consecutive identical headings (PDF running headers)
+    deduped: list[tuple[int, str]] = []
+    for idx, h in unique:
+        if deduped and h.lower() == deduped[-1][1].lower():
+            continue  # skip running header — same heading
+        deduped.append((idx, h))
+    return deduped
 
 
 def read(path: Path) -> BookContent:

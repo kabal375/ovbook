@@ -55,7 +55,8 @@ def convert(
         None, "--mode", "-m",
         help="PDF processing mode: 'rich' (font-size scoring), "
              "'article' (plain-text regex), 'lowscore' (threshold 3). "
-             "Default: auto-detect (rich → article → lowscore).",
+             "Default: auto-detect (rich → article(short) → lowscore).",
+        case_sensitive=False,
     ),
 ):
     """Convert a book file into structured markdown chunks for OpenViking.
@@ -73,6 +74,14 @@ def convert(
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
+
+    # Validate mode for PDF
+    if fmt == "pdf" and mode:
+        valid_modes = {"rich", "article", "lowscore"}
+        if mode.lower() not in valid_modes:
+            typer.echo(f"Error: invalid --mode '{mode}'. "
+                       f"Allowed: {', '.join(sorted(valid_modes))}", err=True)
+            raise typer.Exit(1)
 
     # For PDF, support mode override via kwargs
     reader_kwargs = {}

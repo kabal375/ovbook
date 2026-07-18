@@ -4,9 +4,19 @@ Pipeline:
   1. Rich pipeline (font-size scored headings) — best for born-digital PDFs
      with "Chapter X" keywords and font-size hierarchy.
   2. Article pipeline (plain-text regex section detection) — fallback for
-     SHORT documents (<50 pages): journal papers, reports, articles.
+     SHORT documents (<30 pages): journal papers, reports, articles.
   3. Low-score pipeline (lowered threshold) — last resort for structured
      PDFs without "Chapter X" but with font-size variance (score >= 3).
+
+Notes:
+  - The 30-page guard for article pipeline prevents running-header false
+    positives in long books (dissertation at 270 pages skips article).
+    The article reader itself also skips numbered-section detection for
+    books > ~500 lines (another heuristic for the same reason).
+  - "title" is excluded from pymupdf metadata merge because the article
+    reader extracts a richer title from the first text lines of the PDF.
+  - OCR'd PDFs (--force-ocr) have uniform font across all pages → rich
+    pipeline yields 0 chapters. Use --mode article explicitly for these.
 """
 
 from pathlib import Path
@@ -21,7 +31,9 @@ from ovbook.split import (
     group_chunks_by_chapter,
 )
 
-# Article pipeline is only tried as auto-fallback for short documents
+# Article pipeline is only tried as auto-fallback for short documents.
+# Long books (>30 pages) tend to have running headers that produce
+# false-positive numbered section matches in the article reader.
 _MAX_ARTICLE_PAGES = 30
 
 
@@ -46,7 +58,10 @@ def read(path: Path, **kwargs: str) -> BookContent:
 
     # ── Mode override: article only ───────────────────────────────────
     if mode == "article":
-        article = read_article(path)
+        try:
+            article = read_article(path)
+        except Exception as exc:
+            article = BookContent(meta=meta, groups=[])
         if article.groups:
             article.meta.update(
                 {k: v for k, v in meta.items() if v and k not in ("title",)}
@@ -69,7 +84,10 @@ def read(path: Path, **kwargs: str) -> BookContent:
 
     # ── Article pipeline (only for short documents) ───────────────────
     if page_count < _MAX_ARTICLE_PAGES:
-        article = read_article(path)
+        try:
+            article = read_article(path)
+        except Exception as exc:
+            article = BookContent(meta=meta, groups=[])
         if article.groups:
             article.meta.update(
                 {k: v for k, v in meta.items() if v and k not in ("title",)}

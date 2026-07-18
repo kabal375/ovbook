@@ -1,5 +1,4 @@
 """ovbook CLI — convert books to structured markdown chunks for OpenViking."""
-
 from pathlib import Path
 
 import typer
@@ -52,6 +51,12 @@ def convert(
     collection: str = typer.Option(
         None, "--collection",
         help="Vocabulary collection (default: name of the output directory)"),
+    mode: str = typer.Option(
+        None, "--mode", "-m",
+        help="PDF processing mode: 'rich' (font-size scoring), "
+             "'article' (plain-text regex), 'lowscore' (threshold 3). "
+             "Default: auto-detect (rich → article → lowscore).",
+    ),
 ):
     """Convert a book file into structured markdown chunks for OpenViking.
 
@@ -69,7 +74,12 @@ def convert(
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
 
-    content = reader(input)
+    # For PDF, support mode override via kwargs
+    reader_kwargs = {}
+    if fmt == "pdf" and mode:
+        reader_kwargs["mode"] = mode
+
+    content = reader(input, **reader_kwargs)
     meta = content.meta
     groups = content.groups
 
